@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { analyzeMarket, generateContentStrategy, generateWebpageContent } from './services/geminiService';
-import type { AnalysisResult, BuyerPersona, Competitor, ProductInfo, ContentStrategy, ContentTopic, InteractiveElement, WebpageContent, SeoAnalysis } from './types';
+import { createGammaWebpage } from './services/gammaService';
+import type { AnalysisResult, BuyerPersona, Competitor, ProductInfo, ContentStrategy, ContentTopic, InteractiveElement, WebpageContent, GammaWebpageContent, SeoAnalysis } from './types';
 
 // --- Helper Functions ---
 const fileToBase64 = (file: File): Promise<string> =>
@@ -279,14 +280,29 @@ interface ContentStrategyDisplayProps {
   strategy: ContentStrategy;
   productInfo: ProductInfo | null;
   onGenerateWebpage: (topic: ContentTopic) => void;
+  onGenerateGammaWebpage: (topic: ContentTopic) => void;
   productUrl: string;
   setProductUrl: (url: string) => void;
   generatingTopic: string | null;
+  generatingGammaTopic: string | null;
   generatedWebpages: Record<string, WebpageContent>;
+  generatedGammaWebpages: Record<string, GammaWebpageContent>;
   onViewWebpage: (topicTitle: string) => void;
 }
 
-const ContentStrategyDisplay: React.FC<ContentStrategyDisplayProps> = ({ strategy, productInfo, onGenerateWebpage, productUrl, setProductUrl, generatingTopic, generatedWebpages, onViewWebpage }) => {
+const ContentStrategyDisplay: React.FC<ContentStrategyDisplayProps> = ({ 
+    strategy, 
+    productInfo, 
+    onGenerateWebpage, 
+    onGenerateGammaWebpage, 
+    productUrl, 
+    setProductUrl, 
+    generatingTopic, 
+    generatingGammaTopic, 
+    generatedWebpages, 
+    generatedGammaWebpages, 
+    onViewWebpage 
+}) => {
     
     const handleDownload = () => {
         if (!productInfo) return;
@@ -367,10 +383,13 @@ const ContentStrategyDisplay: React.FC<ContentStrategyDisplayProps> = ({ strateg
                                 key={i} 
                                 topic={topic}
                                 onGenerate={() => onGenerateWebpage(topic)}
+                                onGenerateGamma={() => onGenerateGammaWebpage(topic)}
                                 onView={() => onViewWebpage(topic.topic)}
                                 isEnabled={!!productUrl}
                                 isGenerating={generatingTopic === topic.topic}
+                                isGeneratingGamma={generatingGammaTopic === topic.topic}
                                 isGenerated={!!generatedWebpages[topic.topic]}
+                                isGeneratedGamma={!!generatedGammaWebpages[topic.topic]}
                             />
                         )}
                     </div>
@@ -401,13 +420,26 @@ const ContentStrategyDisplay: React.FC<ContentStrategyDisplayProps> = ({ strateg
 interface ContentTopicCardProps {
     topic: ContentTopic;
     onGenerate: () => void;
+    onGenerateGamma: () => void;
     onView: () => void;
     isEnabled: boolean;
     isGenerating: boolean;
+    isGeneratingGamma: boolean;
     isGenerated: boolean;
+    isGeneratedGamma: boolean;
 }
 
-const ContentTopicCard: React.FC<ContentTopicCardProps> = ({ topic, onGenerate, onView, isEnabled, isGenerating, isGenerated }) => (
+const ContentTopicCard: React.FC<ContentTopicCardProps> = ({ 
+    topic, 
+    onGenerate, 
+    onGenerateGamma, 
+    onView, 
+    isEnabled, 
+    isGenerating, 
+    isGeneratingGamma, 
+    isGenerated, 
+    isGeneratedGamma 
+}) => (
     <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 space-y-3 flex flex-col justify-between">
         <div>
             <h5 className="text-lg font-bold text-brand-secondary">{topic.topic}</h5>
@@ -426,33 +458,55 @@ const ContentTopicCard: React.FC<ContentTopicCardProps> = ({ topic, onGenerate, 
                  <p className="text-text-secondary"><strong className="text-slate-400">外部連結:</strong> {topic.seoGuidance.linkingStrategy.external}</p>
             </div>
         </div>
-        {isGenerated ? (
-             <button 
-                onClick={onView}
-                className="mt-4 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out flex items-center justify-center text-sm"
-            >
-                <EyeIcon className="w-4 h-4 mr-2" />
-                檢視頁面
-            </button>
-        ) : (
-            <button 
-                onClick={onGenerate} 
-                disabled={!isEnabled || isGenerating}
-                className="mt-4 w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center text-sm"
-            >
-                {isGenerating ? (
-                    <>
-                        <div className="mr-2 border-t-transparent border-solid animate-spin rounded-full border-white border-2 h-4 w-4"></div>
-                        生成中...
-                    </>
-                ) : (
-                    <>
-                        <DocumentTextIcon className="w-4 h-4 mr-2" />
-                        生成前導頁
-                    </>
-                )}
-            </button>
-        )}
+        
+        <div className="mt-4 space-y-2">
+            {(isGenerated || isGeneratedGamma) ? (
+                <button 
+                    onClick={onView}
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out flex items-center justify-center text-sm"
+                >
+                    <EyeIcon className="w-4 h-4 mr-2" />
+                    檢視頁面
+                </button>
+            ) : (
+                <>
+                    <button 
+                        onClick={onGenerate} 
+                        disabled={!isEnabled || isGenerating || isGeneratingGamma}
+                        className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center text-sm"
+                    >
+                        {isGenerating ? (
+                            <>
+                                <div className="mr-2 border-t-transparent border-solid animate-spin rounded-full border-white border-2 h-4 w-4"></div>
+                                Gemini 生成中...
+                            </>
+                        ) : (
+                            <>
+                                <DocumentTextIcon className="w-4 h-4 mr-2" />
+                                Gemini 生成前導頁
+                            </>
+                        )}
+                    </button>
+                    <button 
+                        onClick={onGenerateGamma} 
+                        disabled={!isEnabled || isGenerating || isGeneratingGamma}
+                        className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center text-sm"
+                    >
+                        {isGeneratingGamma ? (
+                            <>
+                                <div className="mr-2 border-t-transparent border-solid animate-spin rounded-full border-white border-2 h-4 w-4"></div>
+                                Gamma 生成中...
+                            </>
+                        ) : (
+                            <>
+                                <SparklesIcon className="w-4 h-4 mr-2" />
+                                Gamma 生成前導頁
+                            </>
+                        )}
+                    </button>
+                </>
+            )}
+        </div>
     </div>
 );
 
@@ -464,8 +518,12 @@ const InteractiveElementCard: React.FC<{ element: InteractiveElement }> = ({ ele
 );
 
 
-const WebpageContentDisplay: React.FC<{ content: WebpageContent }> = ({ content }) => {
+const WebpageContentDisplay: React.FC<{ content: WebpageContent | GammaWebpageContent }> = ({ content }) => {
     const [copied, setCopied] = useState(false);
+    const [copiedCss, setCopiedCss] = useState(false);
+    const [viewMode, setViewMode] = useState<'preview' | 'html' | 'css'>('preview');
+
+    const isGammaContent = 'gammaId' in content;
 
     const handleCopy = () => {
         navigator.clipboard.writeText(content.htmlContent);
@@ -473,9 +531,37 @@ const WebpageContentDisplay: React.FC<{ content: WebpageContent }> = ({ content 
         setTimeout(() => setCopied(false), 2000);
     };
 
+    const handleCopyCss = () => {
+        if (isGammaContent) {
+            navigator.clipboard.writeText(content.cssContent);
+            setCopiedCss(true);
+            setTimeout(() => setCopiedCss(false), 2000);
+        }
+    };
+
+    const handleViewGamma = () => {
+        if (isGammaContent) {
+            window.open(content.gammaUrl, '_blank');
+        }
+    };
+
     return (
         <div className="w-full max-w-6xl mx-auto py-8 space-y-8">
-            <ResultCard title="生成的前導頁 & SEO 分析" icon={<GlobeAltIcon className="w-8 h-8" />}>
+            <ResultCard 
+                title={isGammaContent ? "Gamma 生成的前導頁 & SEO 分析" : "生成的前導頁 & SEO 分析"} 
+                icon={<GlobeAltIcon className="w-8 h-8" />}
+                titleAction={
+                    isGammaContent ? (
+                        <button 
+                            onClick={handleViewGamma}
+                            className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out text-sm inline-flex items-center"
+                        >
+                            <GlobeAltIcon className="w-5 h-5 mr-2" />
+                            在 Gamma 中檢視
+                        </button>
+                    ) : null
+                }
+            >
                 <div className="grid lg:grid-cols-3 gap-6">
                     <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
                         <h4 className="text-lg font-semibold text-brand-light">頁面標題</h4>
@@ -489,6 +575,15 @@ const WebpageContentDisplay: React.FC<{ content: WebpageContent }> = ({ content 
                         <h4 className="text-lg font-semibold text-brand-light">Meta 描述</h4>
                         <p className="text-text-secondary mt-1">{content.metaDescription}</p>
                     </div>
+                    {isGammaContent && (
+                        <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 lg:col-span-3">
+                            <h4 className="text-lg font-semibold text-brand-light">Gamma 頁面資訊</h4>
+                            <div className="mt-2 space-y-2">
+                                <p className="text-text-secondary"><strong>頁面 ID:</strong> <code className="bg-slate-900 px-2 py-1 rounded text-sm">{content.gammaId}</code></p>
+                                <p className="text-text-secondary"><strong>Gamma 網址:</strong> <a href={content.gammaUrl} target="_blank" rel="noopener noreferrer" className="text-brand-secondary hover:underline">{content.gammaUrl}</a></p>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </ResultCard>
 
@@ -506,14 +601,67 @@ const WebpageContentDisplay: React.FC<{ content: WebpageContent }> = ({ content 
 
             <div>
                 <div className="flex justify-between items-center mb-4">
-                     <h4 className="text-2xl font-bold text-text-primary">內容預覽 & HTML</h4>
-                     <button onClick={handleCopy} className="bg-brand-secondary hover:bg-brand-dark text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out text-sm inline-flex items-center">
-                         {copied ? <><CheckIcon className="w-5 h-5 mr-2" /> 已複製!</> : <><ClipboardIcon className="w-5 h-5 mr-2" /> 複製 HTML</>}
-                     </button>
+                     <h4 className="text-2xl font-bold text-text-primary">
+                         {viewMode === 'preview' ? '內容預覽' : 
+                          viewMode === 'html' ? 'HTML 程式碼' : 'CSS 樣式'}
+                     </h4>
+                     <div className="flex gap-2">
+                         <div className="flex bg-slate-800 rounded-md p-1">
+                             <button 
+                                 onClick={() => setViewMode('preview')}
+                                 className={`px-3 py-1 rounded text-sm transition ${viewMode === 'preview' ? 'bg-brand-secondary text-white' : 'text-text-secondary hover:text-white'}`}
+                             >
+                                 預覽
+                             </button>
+                             <button 
+                                 onClick={() => setViewMode('html')}
+                                 className={`px-3 py-1 rounded text-sm transition ${viewMode === 'html' ? 'bg-brand-secondary text-white' : 'text-text-secondary hover:text-white'}`}
+                             >
+                                 HTML
+                             </button>
+                             {isGammaContent && (
+                                 <button 
+                                     onClick={() => setViewMode('css')}
+                                     className={`px-3 py-1 rounded text-sm transition ${viewMode === 'css' ? 'bg-brand-secondary text-white' : 'text-text-secondary hover:text-white'}`}
+                                 >
+                                     CSS
+                                 </button>
+                             )}
+                         </div>
+                         {viewMode === 'html' && (
+                             <button onClick={handleCopy} className="bg-brand-secondary hover:bg-brand-dark text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out text-sm inline-flex items-center">
+                                 {copied ? <><CheckIcon className="w-5 h-5 mr-2" /> 已複製!</> : <><ClipboardIcon className="w-5 h-5 mr-2" /> 複製 HTML</>}
+                             </button>
+                         )}
+                         {viewMode === 'css' && isGammaContent && (
+                             <button onClick={handleCopyCss} className="bg-brand-secondary hover:bg-brand-dark text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out text-sm inline-flex items-center">
+                                 {copiedCss ? <><CheckIcon className="w-5 h-5 mr-2" /> 已複製!</> : <><ClipboardIcon className="w-5 h-5 mr-2" /> 複製 CSS</>}
+                             </button>
+                         )}
+                     </div>
                 </div>
-                <div className="bg-white text-slate-800 p-2 rounded-lg shadow-2xl">
-                    <div dangerouslySetInnerHTML={{ __html: content.htmlContent }} />
-                </div>
+                
+                {viewMode === 'preview' && (
+                    <div className="bg-white text-slate-800 p-2 rounded-lg shadow-2xl">
+                        <div dangerouslySetInnerHTML={{ __html: content.htmlContent }} />
+                    </div>
+                )}
+                
+                {viewMode === 'html' && (
+                    <div className="bg-slate-900 text-slate-100 p-4 rounded-lg shadow-2xl">
+                        <pre className="whitespace-pre-wrap text-sm overflow-x-auto">
+                            <code>{content.htmlContent}</code>
+                        </pre>
+                    </div>
+                )}
+                
+                {viewMode === 'css' && isGammaContent && (
+                    <div className="bg-slate-900 text-slate-100 p-4 rounded-lg shadow-2xl">
+                        <pre className="whitespace-pre-wrap text-sm overflow-x-auto">
+                            <code>{content.cssContent}</code>
+                        </pre>
+                    </div>
+                )}
             </div>
 
         </div>
@@ -537,6 +685,11 @@ function App() {
     const [generatedWebpages, setGeneratedWebpages] = useState<Record<string, WebpageContent>>({});
     const [activeWebpageTopic, setActiveWebpageTopic] = useState<string | null>(null);
     const [productUrl, setProductUrl] = useState('');
+
+    // Gamma API 相關狀態
+    const [generatingGammaTopic, setGeneratingGammaTopic] = useState<string | null>(null);
+    const [gammaWebpageError, setGammaWebpageError] = useState<string | null>(null);
+    const [generatedGammaWebpages, setGeneratedGammaWebpages] = useState<Record<string, GammaWebpageContent>>({});
 
     const handleAnalyze = useCallback(async (productInfo: ProductInfo) => {
         handleStartOver(); // Reset everything before starting a new analysis
@@ -586,6 +739,23 @@ function App() {
         }
     }, [contentStrategy, productUrl]);
 
+    const handleGenerateGammaWebpage = useCallback(async (topic: ContentTopic) => {
+        if (!contentStrategy) return;
+        setGeneratingGammaTopic(topic.topic);
+        setGammaWebpageError(null);
+        setActiveWebpageTopic(null); // Hide previous page while generating
+        try {
+            const result = await createGammaWebpage(topic, contentStrategy.interactiveElements, productUrl);
+            setGeneratedGammaWebpages(prev => ({...prev, [topic.topic]: result}));
+            setActiveWebpageTopic(topic.topic);
+        } catch (err) {
+            setGammaWebpageError(err instanceof Error ? err.message : 'Gamma API 發生未知錯誤');
+            console.error(err);
+        } finally {
+            setGeneratingGammaTopic(null);
+        }
+    }, [contentStrategy, productUrl]);
+
     const handleStartOver = () => {
         setIsLoading(false);
         setError(null);
@@ -599,6 +769,11 @@ function App() {
         setGeneratedWebpages({});
         setActiveWebpageTopic(null);
         setProductUrl('');
+        
+        // 重置 Gamma API 相關狀態
+        setGeneratingGammaTopic(null);
+        setGammaWebpageError(null);
+        setGeneratedGammaWebpages({});
     };
     
     const renderContent = () => {
@@ -606,6 +781,7 @@ function App() {
         if (error) return <ErrorDisplay title="分析失敗" message={error} />;
         
         const activeWebpage = activeWebpageTopic ? generatedWebpages[activeWebpageTopic] : null;
+        const activeGammaWebpage = activeWebpageTopic ? generatedGammaWebpages[activeWebpageTopic] : null;
 
         return (
             <>
@@ -628,18 +804,24 @@ function App() {
                         strategy={contentStrategy} 
                         productInfo={productInfo}
                         onGenerateWebpage={handleGenerateWebpage} 
+                        onGenerateGammaWebpage={handleGenerateGammaWebpage}
                         productUrl={productUrl} 
                         setProductUrl={setProductUrl} 
                         generatingTopic={generatingTopic}
+                        generatingGammaTopic={generatingGammaTopic}
                         generatedWebpages={generatedWebpages}
+                        generatedGammaWebpages={generatedGammaWebpages}
                         onViewWebpage={setActiveWebpageTopic}
                     />
                 )}
                 
                 {generatingTopic && <Loader title="正在撰寫前導頁..." message="AI 正在產出圖文並茂的 SEO 優化頁面。" icon={<DocumentTextIcon className="w-16 h-16 mx-auto"/>} />}
+                {generatingGammaTopic && <Loader title="正在透過 Gamma 生成前導頁..." message="Gamma API 正在建立專業的前導頁面。" icon={<SparklesIcon className="w-16 h-16 mx-auto"/>} />}
                 {webpageError && <ErrorDisplay title="網頁生成失敗" message={webpageError} />}
+                {gammaWebpageError && <ErrorDisplay title="Gamma 網頁生成失敗" message={gammaWebpageError} />}
 
                 {activeWebpage && <WebpageContentDisplay content={activeWebpage} />}
+                {activeGammaWebpage && <WebpageContentDisplay content={activeGammaWebpage} />}
             </>
         )
     };

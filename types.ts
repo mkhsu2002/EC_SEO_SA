@@ -92,3 +92,16 @@ export interface WebpageContent {
   htmlContent: string;
   seoAnalysis: SeoAnalysis;
 }
+
+// --- Gamma API Types ---
+
+export interface GammaWebpageContent {
+  gammaId: string;
+  gammaUrl: string;
+  title: string;
+  suggestedUrl: string;
+  metaDescription: string;
+  htmlContent: string;
+  cssContent: string;
+  seoAnalysis: SeoAnalysis;
+}
