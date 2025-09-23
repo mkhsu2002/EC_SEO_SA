@@ -1,6 +1,8 @@
 # FlyPig AI 電商增長神器 v1.9
 
-![App Screenshot](https://i.imgur.com/your-screenshot.png) <!-- 建議您截一張 APP 的圖片並替換此連結 -->
+![App Screenshot 1](https://i.imgur.com/A5bE2fQ.png)
+
+
 
 **FlyPig AI 電商增長神器** 是一個由 AI 驅動的專家級應用程式，旨在為電商產品提供深入的市場分析、內容策略規劃，並能一鍵生成適用於各種 AI 工具的專業提示詞 (Prompt)，以快速產出高品質的前導頁。它將專業的市場分析師、SEO 專家與內容策略師的工作流程自動化，幫助使用者快速掌握市場動態，制定致勝策略。
 
