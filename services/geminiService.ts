@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import type { ProductInfo, AnalysisResult, ContentStrategy, WebpageContent, ContentTopic, InteractiveElement } from '../types';
+import type { ProductInfo, AnalysisResult, ContentStrategy } from '../types';
 
 const API_KEY = process.env.API_KEY;
 
@@ -58,7 +58,8 @@ const analysisSchema = {
         required: ["personaName", "demographics", "interests", "painPoints", "keywords"]
       }
     }
-  }
+  },
+  required: ["productCoreValue", "marketPositioning", "competitorAnalysis", "buyerPersonas"]
 };
 
 const contentStrategySchema = {
@@ -115,35 +116,6 @@ const contentStrategySchema = {
     required: ["contentTopics", "interactiveElements", "ctaSuggestions"]
 };
 
-const webpageContentSchema = {
-    type: Type.OBJECT,
-    properties: {
-        title: { type: Type.STRING, description: "An engaging, SEO-friendly webpage title containing the main keyword." },
-        suggestedUrl: { type: Type.STRING, description: "A short, clear, SEO-friendly URL slug containing the main keyword." },
-        metaDescription: { type: Type.STRING, description: "A concise, engaging meta description (approx. 155 characters) summarizing the content and including the main keyword." },
-        htmlContent: { type: Type.STRING, description: "The full landing page content as a single HTML string, styled with Tailwind CSS classes for a light background." },
-        seoAnalysis: {
-            type: Type.OBJECT,
-            properties: {
-                summary: { type: Type.STRING, description: "A brief summary of the SEO strategies applied." },
-                checklist: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            item: { type: Type.STRING, description: "The specific SEO check performed." },
-                            passed: { type: Type.BOOLEAN, description: "Whether the check was successful." }
-                        },
-                        required: ["item", "passed"]
-                    }
-                }
-            },
-            required: ["summary", "checklist"]
-        }
-    },
-    required: ["title", "suggestedUrl", "metaDescription", "htmlContent", "seoAnalysis"]
-};
-
 
 export const analyzeMarket = async (productInfo: ProductInfo): Promise<AnalysisResult> => {
   let imageDescription = "No image provided.";
@@ -162,7 +134,7 @@ export const analyzeMarket = async (productInfo: ProductInfo): Promise<AnalysisR
       imageDescription = result.text;
     } catch (error) {
       console.error("Error analyzing image:", error);
-      imageDescription = "Could not analyze the provided image.";
+      imageDescription = "無法分析提供的圖片。";
     }
   }
 
@@ -171,10 +143,14 @@ export const analyzeMarket = async (productInfo: ProductInfo): Promise<AnalysisR
 
     **Product Information:**
     - Name: ${productInfo.name}
+    - URL: ${productInfo.url || 'Not provided. Analyze based on description.'}
     - Description & Features: ${productInfo.description}
     - Visual Analysis from Image: ${imageDescription}
 
     **Target Market:** ${productInfo.market}
+    
+    **Instructions:**
+    If a product URL is provided, use it as the primary source of truth and context for the product's features, branding, and value proposition. Synthesize the information from the URL with the provided description. If you cannot access URLs, use the provided text information and the URL as a strong contextual reference.
 
     **Task:**
     1.  **Product Core Value:** Distill the main features, core advantages, and the user pain points it solves.
@@ -196,11 +172,16 @@ export const analyzeMarket = async (productInfo: ProductInfo): Promise<AnalysisR
     });
 
     const jsonString = result.text.trim();
-    const parsedResult: AnalysisResult = JSON.parse(jsonString);
-    return parsedResult;
+    try {
+        const parsedResult: AnalysisResult = JSON.parse(jsonString);
+        return parsedResult;
+    } catch (e) {
+        console.error("Failed to parse JSON response:", jsonString);
+        throw new Error("模型回傳的資料格式錯誤，無法解析。請稍後再試。");
+    }
   } catch (error) {
     console.error("Error generating market analysis:", error);
-    throw new Error("Failed to generate market analysis. The model may have returned an invalid response.");
+    throw new Error("生成市場分析時發生錯誤。請檢查您的網路連線或稍後再試。");
   }
 };
 
@@ -236,67 +217,15 @@ export const generateContentStrategy = async (analysisResult: AnalysisResult): P
         });
 
         const jsonString = result.text.trim();
-        const parsedResult: ContentStrategy = JSON.parse(jsonString);
-        return parsedResult;
+        try {
+            const parsedResult: ContentStrategy = JSON.parse(jsonString);
+            return parsedResult;
+        } catch (e) {
+            console.error("Failed to parse JSON response:", jsonString);
+            throw new Error("模型回傳的資料格式錯誤，無法解析。請稍後再試。");
+        }
     } catch (error) {
         console.error("Error generating content strategy:", error);
-        throw new Error("Failed to generate content strategy. The model returned an invalid response.");
-    }
-};
-
-export const generateWebpageContent = async (topic: ContentTopic, interactiveElements: InteractiveElement[], productUrl: string): Promise<WebpageContent> => {
-    const prompt = `
-        You are an expert direct-response copywriter and landing page designer with deep SEO expertise. Your task is to generate a complete, high-converting, SEO-optimized landing page. All generated content must be in Traditional Chinese (繁體中文).
-
-        **Input Information:**
-        - **Topic:** "${topic.topic}"
-        - **Main Keyword:** "${topic.focusKeyword}"
-        - **Long-tail Keywords:** ${topic.longTailKeywords.join(', ')}
-        - **SEO Guidance:**
-            - Keyword Density: ${topic.seoGuidance.keywordDensity}
-            - Semantic Keywords: ${topic.seoGuidance.semanticKeywords.join(', ')}
-            - Linking Strategy: Internal: ${topic.seoGuidance.linkingStrategy.internal}. External: ${topic.seoGuidance.linkingStrategy.external}.
-        - **Interactive Element Ideas:** ${interactiveElements.map(el => `${el.type}: ${el.description}`).join('; ')}
-        - **Product Store URL (for CTAs):** ${productUrl}
-
-        **Generation Rules:**
-        1.  **Tone & Structure:** Be persuasive and empathetic. Use a "Hook, Problem, Solution" structure.
-            - **Hook:** Start with a compelling hero section (H1 headline) that grabs attention.
-            - **Problem:** Detail the user's pain points.
-            - **Solution:** Introduce the product as the definitive solution, followed by key features translated into tangible benefits.
-            - **CTA:** Conclude with a strong summary and a final call-to-action.
-        
-        2.  **HTML Content (Single String):** Generate a single HTML string using Tailwind CSS classes for a modern, clean look on a light/white background.
-            - **Sections:** Use clear sections for Hero, Problem, Solution, Features/Benefits, and a final CTA section.
-            - **Images:** Include at least TWO relevant, high-quality images using placeholder URLs from \`https://source.unsplash.com/random/800x600?{query}\` (replace {query} with a relevant keyword). All \`<img>\` tags MUST have descriptive \`alt\` text.
-            - **CTAs:** Include at least THREE \`<a>\` tags styled prominently as buttons (e.g., with classes 'bg-blue-600 text-white font-bold py-3 px-6 rounded-lg'), all pointing to the \`${productUrl}\`. Place one in the hero, one mid-page, and one at the end.
-            - **Social Sharing:** At the bottom, add simple anchor links for sharing on Facebook and Twitter.
-
-        3.  **SEO Implementation:**
-            - **Keywords:** The main keyword MUST be in the page \`title\`, \`metaDescription\`, the H1 tag, and at least one H2 tag. Distribute long-tail and semantic keywords naturally. Adhere to the recommended keyword density.
-            - **Meta Info:** Create a compelling page \`title\` and \`metaDescription\` (approx 155 chars).
-            - **URL:** Suggest a short, SEO-friendly URL slug.
-
-        4.  **SEO Self-Analysis:** After generating the content, provide a summary and a checklist of key SEO actions taken in the \`seoAnalysis\` object.
-
-        Return the entire output in a single, valid JSON object that strictly adheres to the provided schema. Do not include any text or markdown formatting outside of the JSON object.
-    `;
-
-    try {
-        const result = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: webpageContentSchema,
-            },
-        });
-
-        const jsonString = result.text.trim();
-        const parsedResult: WebpageContent = JSON.parse(jsonString);
-        return parsedResult;
-    } catch (error) {
-        console.error("Error generating webpage content:", error);
-        throw new Error("Failed to generate webpage content. The model returned an invalid response.");
+        throw new Error("生成內容策略時發生錯誤。請檢查您的網路連線或稍後再試。");
     }
 };

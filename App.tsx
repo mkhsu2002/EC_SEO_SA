@@ -1,7 +1,7 @@
-import React, { useState, useCallback } from 'react';
-import { analyzeMarket, generateContentStrategy, generateWebpageContent } from './services/geminiService';
-import { createGammaWebpage } from './services/gammaService';
-import type { AnalysisResult, BuyerPersona, Competitor, ProductInfo, ContentStrategy, ContentTopic, InteractiveElement, WebpageContent, GammaWebpageContent, SeoAnalysis } from './types';
+import React, { useState, useCallback, useEffect } from 'react';
+import { analyzeMarket, generateContentStrategy } from './services/geminiService';
+import { startGammaGeneration, checkGammaGenerationStatus } from './services/gammaService';
+import type { AnalysisResult, BuyerPersona, Competitor, ProductInfo, ContentStrategy, ContentTopic, InteractiveElement, GammaGenerationResult } from './types';
 
 // --- Helper Functions ---
 const fileToBase64 = (file: File): Promise<string> =>
@@ -19,20 +19,17 @@ const UserGroupIcon: React.FC<{ className?: string }> = ({ className }) => ( <sv
 const LightBulbIcon: React.FC<{ className?: string }> = ({ className }) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.311a6.01 6.01 0 0 0 4.5 0m-8.625-1.401a6.01 6.01 0 0 1 4.5 0m-4.5 0a3.75 3.75 0 0 0-3.75 3.75H3a3.75 3.75 0 0 0 3.75-3.75m6.75-3a3.75 3.75 0 0 0 3.75-3.75V3a3.75 3.75 0 0 0-3.75-3.75S9 3 9 3v6.75a3.75 3.75 0 0 0 3.75 3.75Z" /></svg>);
 const SparklesIcon: React.FC<{ className?: string }> = ({ className }) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z" /></svg>);
 const ArrowPathIcon: React.FC<{ className?: string }> = ({ className }) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 11.667 0l3.181-3.183m-3.181-4.991-3.181-3.183a8.25 8.25 0 0 0-11.667 0L2.985 14.651" /></svg>);
-const ClipboardIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a2.25 2.25 0 0 1-2.25 2.25h-1.5a2.25 2.25 0 0 1-2.25-2.25v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" /></svg>);
-const CheckIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>);
-const XCircleIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>);
-const GlobeAltIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 0 0 8.716-6.747M12 21a9.004 9.004 0 0 1-8.716-6.747M12 21c.504 0 1.002-.023 1.493-.067M12 21c-.504 0-1.002-.023-1.493-.067M12 3c.504 0 1.002.023 1.493.067M12 3c-.504 0-1.002.023-1.493-.067M12 3a9.004 9.004 0 0 0-8.716 6.747M12 3a9.004 9.004 0 0 1 8.716 6.747m0 0H20.75m-17.5 0H3.25m17.5 0a9.004 9.004 0 0 0-8.716-6.747M3.25 0a9.004 9.004 0 0 1 8.716-6.747m0 0V3m0 18V12m0-9c.504 0 1.002.023 1.493.067M12 3c-.504 0-1.002.023-1.493-.067" /></svg>);
 const ArrowDownTrayIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>);
 const EyeIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>);
+const CodeBracketIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 15" /></svg>);
 
 
 // --- UI Components ---
 
 const Header: React.FC = () => (
     <header className="w-full text-center py-6 border-b border-slate-700">
-        <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-600">FlyPig AI 市場分析 PRO</h1>
-        <p className="text-text-secondary mt-2">您的 AI 驅動專家，提供全面的市場與 SEO 分析。</p>
+        <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-600">FlyPig AI 電商增長神器 v1.9</h1>
+        <p className="text-text-secondary mt-2">從市場洞察到前導頁生成，一站式 AI 解決方案。</p>
     </header>
 );
 
@@ -42,15 +39,17 @@ interface InputFormProps {
 }
 const InputForm: React.FC<InputFormProps> = ({ onAnalyze, isLoading }) => {
     const [productName, setProductName] = useState('');
+    const [productUrl, setProductUrl] = useState('');
     const [productDescription, setProductDescription] = useState('');
     const [targetMarket, setTargetMarket] = useState('');
     const [imageFile, setImageFile] = useState<File | null>(null);
     const [fileName, setFileName] = useState('');
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!productName || !productDescription || !targetMarket) {
-            alert("請填寫所有文字欄位。");
+            alert("請填寫所有必要的文字欄位。");
             return;
         }
         let imagePayload: ProductInfo['image'];
@@ -58,7 +57,7 @@ const InputForm: React.FC<InputFormProps> = ({ onAnalyze, isLoading }) => {
             const base64 = await fileToBase64(imageFile);
             imagePayload = { base64, mimeType: imageFile.type };
         }
-        onAnalyze({ name: productName, description: productDescription, market: targetMarket, image: imagePayload });
+        onAnalyze({ name: productName, url: productUrl, description: productDescription, market: targetMarket, image: imagePayload });
     };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -66,6 +65,12 @@ const InputForm: React.FC<InputFormProps> = ({ onAnalyze, isLoading }) => {
             const file = e.target.files[0];
             setImageFile(file);
             setFileName(file.name);
+
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setPreviewUrl(reader.result as string);
+            };
+            reader.readAsDataURL(file);
         }
     };
     
@@ -76,6 +81,10 @@ const InputForm: React.FC<InputFormProps> = ({ onAnalyze, isLoading }) => {
                 <input id="productName" type="text" value={productName} onChange={e => setProductName(e.target.value)} placeholder="例如：人體工學辦公椅" required className="w-full bg-slate-800 border border-slate-700 rounded-md p-3 focus:ring-2 focus:ring-brand-secondary focus:outline-none transition" />
             </div>
             <div className="space-y-2">
+                <label htmlFor="productUrl" className="font-medium text-text-secondary">產品連結網址 (選填)</label>
+                <input id="productUrl" type="url" value={productUrl} onChange={e => setProductUrl(e.target.value)} placeholder="https://example.com/product-page" className="w-full bg-slate-800 border border-slate-700 rounded-md p-3 focus:ring-2 focus:ring-brand-secondary focus:outline-none transition" />
+            </div>
+            <div className="space-y-2">
                 <label htmlFor="productDescription" className="font-medium text-text-secondary">產品描述與特色</label>
                 <textarea id="productDescription" value={productDescription} onChange={e => setProductDescription(e.target.value)} placeholder="在此貼上產品詳細資訊、規格與主要賣點..." required rows={6} className="w-full bg-slate-800 border border-slate-700 rounded-md p-3 focus:ring-2 focus:ring-brand-secondary focus:outline-none transition resize-y" />
             </div>
@@ -83,14 +92,34 @@ const InputForm: React.FC<InputFormProps> = ({ onAnalyze, isLoading }) => {
                 <label htmlFor="targetMarket" className="font-medium text-text-secondary">目標市場</label>
                 <input id="targetMarket" type="text" value={targetMarket} onChange={e => setTargetMarket(e.target.value)} placeholder="例如：台灣、美國加州或日本東京" required className="w-full bg-slate-800 border border-slate-700 rounded-md p-3 focus:ring-2 focus:ring-brand-secondary focus:outline-none transition" />
             </div>
-             <div className="space-y-2">
-                 <label htmlFor="productImage" className="font-medium text-text-secondary">產品圖片 (選填)</label>
-                 <label htmlFor="productImage" className="bg-slate-800 border border-slate-700 rounded-md p-4 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-700 transition">
-                     <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-slate-500 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
-                     <span className="text-sm text-slate-400">{fileName || "點擊以上傳圖片"}</span>
-                 </label>
-                 <input id="productImage" type="file" onChange={handleFileChange} accept="image/*" className="hidden" />
-             </div>
+            <div className="space-y-2">
+                <span className="font-medium text-text-secondary">產品圖片 (選填)</span>
+                <label htmlFor="productImage" className="mt-1 group block cursor-pointer">
+                    <div className={`flex justify-center items-center w-full min-h-[12rem] px-6 py-4 border-2 ${previewUrl ? 'border-slate-700' : 'border-dashed border-slate-600'} rounded-lg bg-slate-800/50 hover:border-brand-secondary transition-colors`}>
+                        {previewUrl ? (
+                            <div className="text-center relative">
+                                <img src={previewUrl} alt="產品預覽" className="max-h-56 w-auto rounded-md shadow-lg" />
+                                <div className="absolute inset-0 bg-black bg-opacity-60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-md">
+                                    <span className="text-white text-lg font-semibold">更換圖片</span>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="text-center">
+                                <svg className="mx-auto h-12 w-12 text-slate-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0L22.5 12.75" /></svg>
+                                <div className="mt-4 flex text-sm justify-center leading-6 text-slate-400">
+                                    <p>
+                                        <span className="font-semibold text-brand-secondary">點擊以上傳</span>
+                                        <span className="pl-1">或拖曳圖片至此</span>
+                                    </p>
+                                </div>
+                                <p className="text-xs leading-5 text-slate-500">PNG, JPG, GIF 等格式</p>
+                            </div>
+                        )}
+                    </div>
+                </label>
+                {fileName && <p className="text-sm text-slate-400 mt-2 text-center">已選取檔案：{fileName}</p>}
+                <input id="productImage" type="file" onChange={handleFileChange} accept="image/*" className="hidden" />
+            </div>
             <button type="submit" disabled={isLoading} className="w-full bg-brand-secondary hover:bg-brand-dark text-white font-bold py-3 px-4 rounded-md transition duration-300 ease-in-out transform hover:scale-105 disabled:bg-slate-600 disabled:cursor-not-allowed disabled:scale-100 flex items-center justify-center">
                  {isLoading ? '分析中...' : '生成市場分析報告'}
                  {isLoading && <div className="ml-3 border-t-transparent border-solid animate-spin rounded-full border-white border-2 h-5 w-5"></div>}
@@ -141,6 +170,9 @@ const AnalysisResultDisplay: React.FC<{ result: AnalysisResult; productInfo: Pro
 
         const generateMarkdownReport = () => {
             let report = `# ${productInfo.name} - 市場分析報告\n\n`;
+            if (productInfo.url) {
+                report += `**產品連結:** [${productInfo.url}](${productInfo.url})\n\n`;
+            }
 
             report += `## 產品核心價值\n\n`;
             report += `### 主要特色\n${productCoreValue.mainFeatures.map(f => `- ${f}`).join('\n')}\n\n`;
@@ -201,7 +233,6 @@ const AnalysisResultDisplay: React.FC<{ result: AnalysisResult; productInfo: Pro
                     </button>
                 }
              >
-                {/* FIX: The ResultCard component requires a `children` prop. A comment-only child can be ignored by the type-checker, causing an error. Added a descriptive paragraph as a valid child. */}
                 <p className="text-text-secondary">以下是根據您提供的產品資訊生成的綜合市場分析報告。</p>
              </ResultCard>
 
@@ -279,30 +310,15 @@ const PersonaCard: React.FC<{ persona: BuyerPersona }> = ({ persona }) => (
 interface ContentStrategyDisplayProps {
   strategy: ContentStrategy;
   productInfo: ProductInfo | null;
-  onGenerateWebpage: (topic: ContentTopic) => void;
-  onGenerateGammaWebpage: (topic: ContentTopic) => void;
-  productUrl: string;
-  setProductUrl: (url: string) => void;
+  analysisResult: AnalysisResult | null;
+  onGenerateDocument: (topic: ContentTopic) => void;
+  onGenerateGammaPrompt: (topic: ContentTopic) => void;
+  onGenerateAIStudioPrompt: (topic: ContentTopic) => void;
   generatingTopic: string | null;
-  generatingGammaTopic: string | null;
-  generatedWebpages: Record<string, WebpageContent>;
-  generatedGammaWebpages: Record<string, GammaWebpageContent>;
-  onViewWebpage: (topicTitle: string) => void;
+  generatedDocuments: Record<string, GammaGenerationResult>;
 }
 
-const ContentStrategyDisplay: React.FC<ContentStrategyDisplayProps> = ({ 
-    strategy, 
-    productInfo, 
-    onGenerateWebpage, 
-    onGenerateGammaWebpage, 
-    productUrl, 
-    setProductUrl, 
-    generatingTopic, 
-    generatingGammaTopic, 
-    generatedWebpages, 
-    generatedGammaWebpages, 
-    onViewWebpage 
-}) => {
+const ContentStrategyDisplay: React.FC<ContentStrategyDisplayProps> = ({ strategy, productInfo, analysisResult, onGenerateDocument, onGenerateGammaPrompt, onGenerateAIStudioPrompt, generatingTopic, generatedDocuments }) => {
     
     const handleDownload = () => {
         if (!productInfo) return;
@@ -367,29 +383,21 @@ const ContentStrategyDisplay: React.FC<ContentStrategyDisplayProps> = ({
         >
             <div className="space-y-8">
                  <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-                    <h4 className="text-xl font-bold text-brand-light mb-3">第三步：生成前導頁 (Landing Page)</h4>
-                    <p className="text-text-secondary mb-4 text-sm">請提供產品的商店網址以用於「行動呼籲 (CTA)」連結，然後選擇下方一個主題來生成完整的前導頁。</p>
-                     <div className="space-y-2">
-                        <label htmlFor="productUrl" className="font-medium text-text-secondary">產品商店網址</label>
-                        <input id="productUrl" type="url" value={productUrl} onChange={e => setProductUrl(e.target.value)} placeholder="https://example.com/your-product" required className="w-full bg-slate-900 border border-slate-600 rounded-md p-3 focus:ring-2 focus:ring-brand-secondary focus:outline-none transition" />
-                    </div>
+                    <h4 className="text-xl font-bold text-brand-light mb-3">第三步：生成前導頁與提示詞</h4>
+                    <p className="text-text-secondary mb-4 text-sm">選擇下方一個主題，生成適用於不同平台的提示詞，或等待我們即將推出的 Gamma 自動生成功能。</p>
                 </div>
 
                 <div>
-                    <h4 className="text-xl font-bold text-brand-light mb-4">選擇一個主題以生成內容</h4>
                     <div className="grid md:grid-cols-1 lg:grid-cols-3 gap-6">
                         {strategy.contentTopics.map((topic, i) => 
                             <ContentTopicCard 
                                 key={i} 
                                 topic={topic}
-                                onGenerate={() => onGenerateWebpage(topic)}
-                                onGenerateGamma={() => onGenerateGammaWebpage(topic)}
-                                onView={() => onViewWebpage(topic.topic)}
-                                isEnabled={!!productUrl}
+                                onGenerate={() => onGenerateDocument(topic)}
+                                onGenerateGammaPrompt={() => onGenerateGammaPrompt(topic)}
+                                onGenerateAIStudioPrompt={() => onGenerateAIStudioPrompt(topic)}
                                 isGenerating={generatingTopic === topic.topic}
-                                isGeneratingGamma={generatingGammaTopic === topic.topic}
-                                isGenerated={!!generatedWebpages[topic.topic]}
-                                isGeneratedGamma={!!generatedGammaWebpages[topic.topic]}
+                                generatedDocument={generatedDocuments[topic.topic]}
                             />
                         )}
                     </div>
@@ -420,26 +428,16 @@ const ContentStrategyDisplay: React.FC<ContentStrategyDisplayProps> = ({
 interface ContentTopicCardProps {
     topic: ContentTopic;
     onGenerate: () => void;
-    onGenerateGamma: () => void;
-    onView: () => void;
-    isEnabled: boolean;
+    onGenerateGammaPrompt: () => void;
+    onGenerateAIStudioPrompt: () => void;
     isGenerating: boolean;
-    isGeneratingGamma: boolean;
-    isGenerated: boolean;
-    isGeneratedGamma: boolean;
+    generatedDocument: GammaGenerationResult | undefined;
 }
 
-const ContentTopicCard: React.FC<ContentTopicCardProps> = ({ 
-    topic, 
-    onGenerate, 
-    onGenerateGamma, 
-    onView, 
-    isEnabled, 
-    isGenerating, 
-    isGeneratingGamma, 
-    isGenerated, 
-    isGeneratedGamma 
-}) => (
+const ContentTopicCard: React.FC<ContentTopicCardProps> = ({ topic, onGenerate, onGenerateGammaPrompt, onGenerateAIStudioPrompt, isGenerating, generatedDocument }) => {
+    const isGenerated = generatedDocument && generatedDocument.status === 'completed';
+
+    return (
     <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 space-y-3 flex flex-col justify-between">
         <div>
             <h5 className="text-lg font-bold text-brand-secondary">{topic.topic}</h5>
@@ -454,61 +452,33 @@ const ContentTopicCard: React.FC<ContentTopicCardProps> = ({
                         {topic.seoGuidance.semanticKeywords.map((kw, i) => <Tag key={i}>{kw}</Tag>)}
                     </div>
                  </div>
-                 <p className="text-text-secondary"><strong className="text-slate-400">內部連結:</strong> {topic.seoGuidance.linkingStrategy.internal}</p>
-                 <p className="text-text-secondary"><strong className="text-slate-400">外部連結:</strong> {topic.seoGuidance.linkingStrategy.external}</p>
             </div>
         </div>
-        
         <div className="mt-4 space-y-2">
-            {(isGenerated || isGeneratedGamma) ? (
-                <button 
-                    onClick={onView}
-                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out flex items-center justify-center text-sm"
-                >
-                    <EyeIcon className="w-4 h-4 mr-2" />
-                    檢視頁面
-                </button>
-            ) : (
-                <>
-                    <button 
-                        onClick={onGenerate} 
-                        disabled={!isEnabled || isGenerating || isGeneratingGamma}
-                        className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center text-sm"
-                    >
-                        {isGenerating ? (
-                            <>
-                                <div className="mr-2 border-t-transparent border-solid animate-spin rounded-full border-white border-2 h-4 w-4"></div>
-                                Gemini 生成中...
-                            </>
-                        ) : (
-                            <>
-                                <DocumentTextIcon className="w-4 h-4 mr-2" />
-                                Gemini 生成前導頁
-                            </>
-                        )}
-                    </button>
-                    <button 
-                        onClick={onGenerateGamma} 
-                        disabled={!isEnabled || isGenerating || isGeneratingGamma}
-                        className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center text-sm"
-                    >
-                        {isGeneratingGamma ? (
-                            <>
-                                <div className="mr-2 border-t-transparent border-solid animate-spin rounded-full border-white border-2 h-4 w-4"></div>
-                                Gamma 生成中...
-                            </>
-                        ) : (
-                            <>
-                                <SparklesIcon className="w-4 h-4 mr-2" />
-                                Gamma 生成前導頁
-                            </>
-                        )}
-                    </button>
-                </>
-            )}
+             <button 
+                disabled={true}
+                className="w-full bg-slate-600 text-white font-bold py-2 px-4 rounded-md disabled:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 flex items-center justify-center text-sm"
+            >
+                <DocumentTextIcon className="w-4 h-4 mr-2" />
+                呼叫 Gamma API (即將推出)
+            </button>
+             <button 
+                onClick={onGenerateAIStudioPrompt} 
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out flex items-center justify-center text-sm"
+            >
+                <SparklesIcon className="w-4 h-4 mr-2" />
+                生成 AI Studio 提示詞
+            </button>
+            <button 
+                onClick={onGenerateGammaPrompt} 
+                className="w-full bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out flex items-center justify-center text-sm"
+            >
+                <CodeBracketIcon className="w-4 h-4 mr-2" />
+                生成 Gamma 提示詞
+            </button>
         </div>
     </div>
-);
+)};
 
 const InteractiveElementCard: React.FC<{ element: InteractiveElement }> = ({ element }) => (
      <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
@@ -517,156 +487,140 @@ const InteractiveElementCard: React.FC<{ element: InteractiveElement }> = ({ ele
     </div>
 );
 
-
-const WebpageContentDisplay: React.FC<{ content: WebpageContent | GammaWebpageContent }> = ({ content }) => {
-    const [copied, setCopied] = useState(false);
-    const [copiedCss, setCopiedCss] = useState(false);
-    const [viewMode, setViewMode] = useState<'preview' | 'html' | 'css'>('preview');
-
-    const isGammaContent = 'gammaId' in content;
+const PromptModal: React.FC<{ prompt: string; onClose: () => void; title: string; }> = ({ prompt, onClose, title }) => {
+    const [isCopied, setIsCopied] = useState(false);
+    const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
     const handleCopy = () => {
-        navigator.clipboard.writeText(content.htmlContent);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-    };
-
-    const handleCopyCss = () => {
-        if (isGammaContent) {
-            navigator.clipboard.writeText(content.cssContent);
-            setCopiedCss(true);
-            setTimeout(() => setCopiedCss(false), 2000);
+        if (textareaRef.current) {
+            navigator.clipboard.writeText(textareaRef.current.value);
+            setIsCopied(true);
+            setTimeout(() => setIsCopied(false), 2000);
         }
     };
-
-    const handleViewGamma = () => {
-        if (isGammaContent) {
-            window.open(content.gammaUrl, '_blank');
-        }
-    };
+    
+    // Close modal on escape key
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                onClose();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [onClose]);
 
     return (
-        <div className="w-full max-w-6xl mx-auto py-8 space-y-8">
-            <ResultCard 
-                title={isGammaContent ? "Gamma 生成的前導頁 & SEO 分析" : "生成的前導頁 & SEO 分析"} 
-                icon={<GlobeAltIcon className="w-8 h-8" />}
-                titleAction={
-                    isGammaContent ? (
-                        <button 
-                            onClick={handleViewGamma}
-                            className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out text-sm inline-flex items-center"
-                        >
-                            <GlobeAltIcon className="w-5 h-5 mr-2" />
-                            在 Gamma 中檢視
-                        </button>
-                    ) : null
-                }
+        <div 
+            className="fixed inset-0 bg-black bg-opacity-70 flex justify-center items-center z-50 animate-fade-in p-4"
+            onClick={onClose}
+        >
+            <div 
+                className="bg-surface rounded-lg shadow-xl w-full max-w-3xl border border-slate-700 flex flex-col max-h-full"
+                onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside
             >
-                <div className="grid lg:grid-cols-3 gap-6">
-                    <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-                        <h4 className="text-lg font-semibold text-brand-light">頁面標題</h4>
-                        <p className="text-text-primary mt-1">{content.title}</p>
-                    </div>
-                     <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-                        <h4 className="text-lg font-semibold text-brand-light">建議的網址</h4>
-                        <p className="text-text-primary mt-1 font-mono bg-slate-900 p-2 rounded-md inline-block">yourwebsite.com<span className="text-brand-secondary">{content.suggestedUrl}</span></p>
-                    </div>
-                    <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 lg:col-span-3">
-                        <h4 className="text-lg font-semibold text-brand-light">Meta 描述</h4>
-                        <p className="text-text-secondary mt-1">{content.metaDescription}</p>
-                    </div>
-                    {isGammaContent && (
-                        <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 lg:col-span-3">
-                            <h4 className="text-lg font-semibold text-brand-light">Gamma 頁面資訊</h4>
-                            <div className="mt-2 space-y-2">
-                                <p className="text-text-secondary"><strong>頁面 ID:</strong> <code className="bg-slate-900 px-2 py-1 rounded text-sm">{content.gammaId}</code></p>
-                                <p className="text-text-secondary"><strong>Gamma 網址:</strong> <a href={content.gammaUrl} target="_blank" rel="noopener noreferrer" className="text-brand-secondary hover:underline">{content.gammaUrl}</a></p>
-                            </div>
-                        </div>
-                    )}
+                <div className="p-5 border-b border-slate-700 flex justify-between items-center flex-shrink-0">
+                    <h2 className="text-xl font-bold text-text-primary">{title}</h2>
+                    <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
                 </div>
-            </ResultCard>
-
-             <ResultCard title="SEO 實踐分析" icon={<CheckIcon className="w-8 h-8" />}>
-                 <p className="text-text-secondary mb-4">{content.seoAnalysis.summary}</p>
-                 <ul className="space-y-2">
-                     {content.seoAnalysis.checklist.map((item, i) => (
-                         <li key={i} className={`flex items-center p-2 rounded-md ${item.passed ? 'bg-green-900/50' : 'bg-red-900/50'}`}>
-                             {item.passed ? <CheckIcon className="w-5 h-5 mr-3 text-green-400" /> : <XCircleIcon className="w-5 h-5 mr-3 text-red-400" />}
-                             <span className={item.passed ? 'text-green-300' : 'text-red-300'}>{item.item}</span>
-                         </li>
-                     ))}
-                 </ul>
-            </ResultCard>
-
-            <div>
-                <div className="flex justify-between items-center mb-4">
-                     <h4 className="text-2xl font-bold text-text-primary">
-                         {viewMode === 'preview' ? '內容預覽' : 
-                          viewMode === 'html' ? 'HTML 程式碼' : 'CSS 樣式'}
-                     </h4>
-                     <div className="flex gap-2">
-                         <div className="flex bg-slate-800 rounded-md p-1">
-                             <button 
-                                 onClick={() => setViewMode('preview')}
-                                 className={`px-3 py-1 rounded text-sm transition ${viewMode === 'preview' ? 'bg-brand-secondary text-white' : 'text-text-secondary hover:text-white'}`}
-                             >
-                                 預覽
-                             </button>
-                             <button 
-                                 onClick={() => setViewMode('html')}
-                                 className={`px-3 py-1 rounded text-sm transition ${viewMode === 'html' ? 'bg-brand-secondary text-white' : 'text-text-secondary hover:text-white'}`}
-                             >
-                                 HTML
-                             </button>
-                             {isGammaContent && (
-                                 <button 
-                                     onClick={() => setViewMode('css')}
-                                     className={`px-3 py-1 rounded text-sm transition ${viewMode === 'css' ? 'bg-brand-secondary text-white' : 'text-text-secondary hover:text-white'}`}
-                                 >
-                                     CSS
-                                 </button>
-                             )}
-                         </div>
-                         {viewMode === 'html' && (
-                             <button onClick={handleCopy} className="bg-brand-secondary hover:bg-brand-dark text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out text-sm inline-flex items-center">
-                                 {copied ? <><CheckIcon className="w-5 h-5 mr-2" /> 已複製!</> : <><ClipboardIcon className="w-5 h-5 mr-2" /> 複製 HTML</>}
-                             </button>
-                         )}
-                         {viewMode === 'css' && isGammaContent && (
-                             <button onClick={handleCopyCss} className="bg-brand-secondary hover:bg-brand-dark text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out text-sm inline-flex items-center">
-                                 {copiedCss ? <><CheckIcon className="w-5 h-5 mr-2" /> 已複製!</> : <><ClipboardIcon className="w-5 h-5 mr-2" /> 複製 CSS</>}
-                             </button>
-                         )}
-                     </div>
+                <div className="p-5 overflow-y-auto">
+                    <p className="text-text-secondary mb-4 text-sm">
+                        請複製以下提示詞，並將其貼到對應的 AI 工具中以生成高品質內容。
+                    </p>
+                    <textarea 
+                        ref={textareaRef}
+                        readOnly 
+                        value={prompt} 
+                        className="w-full h-96 bg-slate-800 border border-slate-600 rounded-md p-3 text-sm text-slate-300 resize-none focus:ring-2 focus:ring-brand-secondary focus:outline-none" 
+                    />
                 </div>
-                
-                {viewMode === 'preview' && (
-                    <div className="bg-white text-slate-800 p-2 rounded-lg shadow-2xl">
-                        <div dangerouslySetInnerHTML={{ __html: content.htmlContent }} />
-                    </div>
-                )}
-                
-                {viewMode === 'html' && (
-                    <div className="bg-slate-900 text-slate-100 p-4 rounded-lg shadow-2xl">
-                        <pre className="whitespace-pre-wrap text-sm overflow-x-auto">
-                            <code>{content.htmlContent}</code>
-                        </pre>
-                    </div>
-                )}
-                
-                {viewMode === 'css' && isGammaContent && (
-                    <div className="bg-slate-900 text-slate-100 p-4 rounded-lg shadow-2xl">
-                        <pre className="whitespace-pre-wrap text-sm overflow-x-auto">
-                            <code>{content.cssContent}</code>
-                        </pre>
-                    </div>
-                )}
+                <div className="p-4 border-t border-slate-700 flex justify-end flex-shrink-0 bg-slate-800/50 rounded-b-lg">
+                    <button 
+                        onClick={handleCopy}
+                        className="bg-brand-secondary hover:bg-brand-dark text-white font-bold py-2 px-5 rounded-md transition duration-300 ease-in-out inline-flex items-center"
+                    >
+                        {isCopied ? '已複製！' : '複製提示詞'}
+                    </button>
+                </div>
             </div>
-
         </div>
-    )
-}
+    );
+};
+
+const InfoModal: React.FC<{ title: string; children: React.ReactNode; onClose: () => void; }> = ({ title, children, onClose }) => {
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                onClose();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [onClose]);
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex justify-center items-center z-50 animate-fade-in p-4" onClick={onClose}>
+            <div className="bg-surface rounded-lg shadow-xl w-full max-w-3xl border border-slate-700 flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+                <div className="p-5 border-b border-slate-700 flex justify-between items-center flex-shrink-0">
+                    <h2 className="text-xl font-bold text-text-primary">{title}</h2>
+                    <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
+                </div>
+                <div className="p-6 overflow-y-auto text-text-secondary space-y-4">
+                    {children}
+                </div>
+                <div className="p-4 border-t border-slate-700 flex justify-end flex-shrink-0 bg-slate-800/50 rounded-b-lg">
+                    <button onClick={onClose} className="bg-brand-secondary hover:bg-brand-dark text-white font-bold py-2 px-5 rounded-md transition">
+                        關閉
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const FeatureIntroductionContent: React.FC = () => (
+    <>
+        <p className="mb-6">「FlyPig AI 電商增長神器」是一個從市場策略、內容規劃到技術實現的全流程加速器，旨在為您的電商事業節省大量時間與人力成本，實現更快速、更智慧的業務增長。</p>
+        <div className="space-y-6">
+            <div>
+                <h3 className="text-lg font-semibold text-brand-light mb-2">🚀 全方位市場深度透視</h3>
+                <ul className="list-disc list-inside space-y-1 pl-2">
+                    <li>**智慧產品分析：** 只需提供產品資訊，AI 就能自動拆解其核心賣點，更可上傳圖片進行視覺分析。</li>
+                    <li>**精準市場定位：** 深入剖析目標市場的文化、消費習慣和熱門趨勢。</li>
+                    <li>**競爭格局掃描：** 自動識別主要競爭對手，並透視其行銷策略與優劣勢。</li>
+                    <li>**清晰用戶畫像：** 為您描繪出最真實的潛在客戶樣貌 (Buyer Persona)，包含興趣、痛點與搜尋關鍵字。</li>
+                </ul>
+            </div>
+            <div>
+                <h3 className="text-lg font-semibold text-brand-light mb-2">✍️ 自動化內容與 SEO 策略規劃</h3>
+                <ul className="list-disc list-inside space-y-1 pl-2">
+                     <li>**高價值內容主題生成：** AI 自動規劃最能吸引目標客群的內容主題。</li>
+                     <li>**專業 SEO 佈局建議：** 為每個主題提供完整的 SEO 策略，協助網站獲得更高排名。</li>
+                     <li>**高轉換率文案點子：** 提供多組具說服力的行動呼籲 (CTA) 文案。</li>
+                </ul>
+            </div>
+            <div>
+                <h3 className="text-lg font-semibold text-brand-light mb-2">💻 一鍵生成行銷素材與程式碼</h3>
+                 <ul className="list-disc list-inside space-y-1 pl-2">
+                     <li>**AI Studio 前導頁程式碼生成：** 一鍵生成專業提示詞，讓 AI 程式碼助理（如 Google AI Studio）在幾秒內產出高品質的 React 前導頁程式碼。</li>
+                     <li>**專業簡報/文件提示詞生成：** 為 Gamma 等 AI 簡報工具生成專用提示詞，快速創建專業簡報。</li>
+                     <li>**[即將推出] Gamma API 自動化文件生成：** 未來將能直接串接 Gamma API，全自動生成圖文並茂的專業文件。</li>
+                 </ul>
+            </div>
+        </div>
+         <h3 className="text-lg font-semibold text-brand-light mt-8 mb-2">💡 如何使用</h3>
+         <ol className="list-decimal list-inside space-y-2 pl-2">
+             <li>**第一步：輸入產品資訊** - 填寫產品資料並點擊「生成市場分析報告」。</li>
+             <li>**第二步：生成內容策略** - 報告產出後，點擊「生成內容策略」按鈕，AI 將規劃出詳細的內容與 SEO 策略。</li>
+             <li>**第三步：生成提示詞** - 從三個建議的內容主題中，選擇一個並點擊「生成 AI Studio 提示詞」或「生成 Gamma 提示詞」，即可複製提示詞至對應工具使用。</li>
+         </ol>
+    </>
+);
+
 
 // --- Main App Component ---
 
@@ -675,26 +629,30 @@ function App() {
     const [error, setError] = useState<string | null>(null);
     const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
     const [productInfo, setProductInfo] = useState<ProductInfo | null>(null);
+    const [formKey, setFormKey] = useState(0);
 
     const [isGeneratingStrategy, setIsGeneratingStrategy] = useState(false);
     const [strategyError, setStrategyError] = useState<string | null>(null);
     const [contentStrategy, setContentStrategy] = useState<ContentStrategy | null>(null);
     
     const [generatingTopic, setGeneratingTopic] = useState<string | null>(null);
-    const [webpageError, setWebpageError] = useState<string | null>(null);
-    const [generatedWebpages, setGeneratedWebpages] = useState<Record<string, WebpageContent>>({});
-    const [activeWebpageTopic, setActiveWebpageTopic] = useState<string | null>(null);
-    const [productUrl, setProductUrl] = useState('');
+    const [gammaError, setGammaError] = useState<string | null>(null);
+    const [generatedDocuments, setGeneratedDocuments] = useState<Record<string, GammaGenerationResult>>({});
+    const [gammaStatusMessage, setGammaStatusMessage] = useState<string | null>(null);
+    
+    const [promptModalContent, setPromptModalContent] = useState<string | null>(null);
+    const [promptModalTitle, setPromptModalTitle] = useState('');
+    
+    const [isIntroModalOpen, setIsIntroModalOpen] = useState(false);
 
-    // Gamma API 相關狀態
-    const [generatingGammaTopic, setGeneratingGammaTopic] = useState<string | null>(null);
-    const [gammaWebpageError, setGammaWebpageError] = useState<string | null>(null);
-    const [generatedGammaWebpages, setGeneratedGammaWebpages] = useState<Record<string, GammaWebpageContent>>({});
+
+    const pollingRefs = React.useRef<Record<string, boolean>>({});
 
     const handleAnalyze = useCallback(async (productInfo: ProductInfo) => {
-        handleStartOver(); // Reset everything before starting a new analysis
         setProductInfo(productInfo);
         setIsLoading(true);
+        setError(null);
+        setAnalysisResult(null);
         try {
             const result = await analyzeMarket(productInfo);
             setAnalysisResult(result);
@@ -722,39 +680,208 @@ function App() {
         }
     }, [analysisResult]);
 
-     const handleGenerateWebpage = useCallback(async (topic: ContentTopic) => {
-        if (!contentStrategy) return;
-        setGeneratingTopic(topic.topic);
-        setWebpageError(null);
-        setActiveWebpageTopic(null); // Hide previous page while generating
-        try {
-            const result = await generateWebpageContent(topic, contentStrategy.interactiveElements, productUrl);
-            setGeneratedWebpages(prev => ({...prev, [topic.topic]: result}));
-            setActiveWebpageTopic(topic.topic);
-        } catch (err) {
-            setWebpageError(err instanceof Error ? err.message : '發生未知錯誤');
-            console.error(err);
-        } finally {
-            setGeneratingTopic(null);
-        }
-    }, [contentStrategy, productUrl]);
+    const handleGenerateGammaPrompt = useCallback((topic: ContentTopic) => {
+        if (!productInfo || !analysisResult || !contentStrategy) return;
 
-    const handleGenerateGammaWebpage = useCallback(async (topic: ContentTopic) => {
-        if (!contentStrategy) return;
-        setGeneratingGammaTopic(topic.topic);
-        setGammaWebpageError(null);
-        setActiveWebpageTopic(null); // Hide previous page while generating
+        const personaDetails = analysisResult.buyerPersonas.map(p => 
+            `- **${p.personaName} (${p.demographics}):**\n   - **興趣:** ${p.interests.join(', ')}\n   - **痛點:** ${p.painPoints.join(', ')}\n   - **搜尋關鍵字:** ${p.keywords.join(', ')}`
+        ).join('\n\n');
+
+        const prompt = `**任務目標：** 根據以下詳細的市場分析，為產品「${productInfo.name}」創建一篇具吸引力、SEO 優化的專業前導頁文章。
+
+---
+
+**1. 文章主標題 (請直接使用)：**
+"${topic.topic}"
+
+---
+
+**2. 核心推廣產品資訊：**
+*   **產品名稱：** ${productInfo.name}
+*   **產品描述：** ${productInfo.description}
+*   **產品參考連結 (用於連結與內容參考)：** ${productInfo.url || '無'}
+
+---
+
+**3. 目標受眾深度剖析 (請以此為基礎進行撰寫)：**
+您正在為以下這些人物撰寫，請直接解決他們的需求與痛點：
+${personaDetails}
+
+---
+
+**4. 關鍵訊息與價值主張 (文章必須強調)：**
+*   **主要特色：** ${analysisResult.productCoreValue.mainFeatures.join('; ')}
+*   **核心優勢 (獨特賣點)：** ${analysisResult.productCoreValue.coreAdvantages.join('; ')}
+*   **解決的痛點：** ${analysisResult.productCoreValue.painPointsSolved.join('; ')}
+
+---
+
+**5. 內容與 SEO 要求：**
+*   **主要關鍵字 (Focus Keyword)：** \`${topic.focusKeyword}\` (請確保在標題、副標題和內文中自然地出現)
+*   **長尾關鍵字 (Long-tail Keywords)：** 請在文章中自然地融入以下詞組：${topic.longTailKeywords.join(', ')}
+*   **語意關鍵字 (Semantic Keywords)：** 為了建立主題權威，請使用相關概念詞：${topic.seoGuidance.semanticKeywords.join(', ')}
+*   **建議文章結構：**
+    1.  **開頭：** 使用一個引人入勝的引言，提及目標受眾的一個共同痛點，引起共鳴。
+    2.  **發展：** 詳細闡述該問題，讓讀者感覺「你懂我」。
+    3.  **解決方案：** 順勢引出「${productInfo.name}」作為理想的解決方案。自然地介紹其特色與優勢如何解決前述痛點。
+    4.  **差異化：** (如果適用) 可以簡短提及與市場上其他方案（例如 ${analysisResult.competitorAnalysis.length > 0 ? analysisResult.competitorAnalysis[0].brandName : '傳統方法'}）的不同之處，突顯我們的獨特性。
+    5.  **結尾：** 用一個強而有力的總結收尾，並搭配明確的行動呼籲 (CTA)。
+*   **寫作語氣：** 針對 **${productInfo.market}** 市場，語氣應專業、具說服力，並對用戶的問題表示同理心。參考語言特性：${analysisResult.marketPositioning.languageNuances}。
+
+---
+
+**6. 行動呼籲 (Call to Action - CTA)：**
+請在文章結尾處，自然地整合以下至少一個 CTA 文案：
+${contentStrategy.ctaSuggestions.map(cta => `- "${cta}"`).join('\n')}
+
+---
+
+**7. 視覺要求：**
+請選擇與產品、目標市場和受眾形象相關的高品質、專業庫存圖片。例如，展示符合人物誌形象的人們從產品中受益的場景。
+`.trim();
+        setPromptModalTitle('Gamma 生成提示詞');
+        setPromptModalContent(prompt);
+
+    }, [productInfo, analysisResult, contentStrategy]);
+
+    const handleGenerateAIStudioPrompt = useCallback((topic: ContentTopic) => {
+        if (!productInfo || !analysisResult || !contentStrategy) return;
+
+        const prompt = `
+You are an expert frontend developer specializing in creating high-conversion landing pages with React and Tailwind CSS.
+Your task is to generate the complete React application code to be placed inside the \`<script type="module">\` tag of the provided HTML boilerplate.
+
+**Boilerplate (DO NOT repeat this structure in your output, only provide the JavaScript code for the script tag):**
+\`\`\`html
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${productInfo.name} - Landing Page</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client"
+      }
+    }
+    </script>
+</head>
+<body class="bg-slate-900 text-slate-50">
+    <div id="root"></div>
+    <script type="module">
+        // YOUR REACT CODE GOES HERE
+    </script>
+</body>
+</html>
+\`\`\`
+
+**Instructions for the React Code:**
+1.  **Imports:** Start your code by importing React and ReactDOM. This is mandatory.
+    \`\`\`javascript
+    import React, { useState, useEffect, useCallback } from 'react';
+    import ReactDOM from 'react-dom/client';
+    \`\`\`
+2.  **Single Component Structure:** Create a main \`App\` component that contains the entire landing page structure.
+3.  **Render the App:** Use \`ReactDOM.createRoot(document.getElementById('root')).render(<App />);\` to render your main component.
+4.  **Design & UX:**
+    *   The design must be modern, clean, professional, and fully responsive using Tailwind CSS.
+    *   Use a color palette based on: Primary: #3b82f6 (blue-500), Surface: #1e293b (slate-800), Text: #f8fafc (slate-50). The body background is already set to a dark slate.
+    *   Incorporate subtle animations (e.g., fade-in on scroll) for a premium feel.
+    *   Use high-quality placeholder images from \`https://picsum.photos/seed/{seed}/width/height\` for visuals.
+5.  **Content & SEO:**
+    *   The main headline of the page must be: "${topic.topic}".
+    *   The content should be persuasive and directly address the target audience's needs.
+    *   Integrate the following SEO keywords naturally:
+        *   **Focus Keyword:** ${topic.focusKeyword}
+        *   **Long-tail Keywords:** ${topic.longTailKeywords.join(', ')}
+        *   **Semantic Keywords:** ${topic.seoGuidance.semanticKeywords.join(', ')}
+6.  **Page Structure:** The landing page should include the following sections in order:
+    *   **Header:** With the product name and a primary CTA button.
+    *   **Hero Section:** A compelling headline ("${topic.topic}"), a brief, engaging subheading, and a visually appealing image.
+    *   **Pain Points Section:** A section titled "是否這就是您遇到的困擾？" or similar, listing the key pain points solved by the product: "${analysisResult.productCoreValue.painPointsSolved.join('", "')}". Speak directly to the user's problems.
+    *   **Solution/Features Section:** Introduce "${productInfo.name}" as the solution. Detail its main features: "${analysisResult.productCoreValue.mainFeatures.join('", "')}". Highlight the core advantages: "${analysisResult.productCoreValue.coreAdvantages.join('", "')}".
+    *   **Testimonials Section:** Create a section with 2-3 brief, fictional testimonials. Each testimonial should represent one of the buyer personas:
+        ${analysisResult.buyerPersonas.map(p => `- ${p.personaName} (${p.demographics})`).join('\n        ')}
+    *   **Final Call-to-Action (CTA) Section:** A strong, clear CTA section. Use one of these suggested CTA texts: "${contentStrategy.ctaSuggestions.join('" or "')}".
+
+**START OF CONTEXT DATA:**
+---
+*   **Product Name:** ${productInfo.name}
+*   **Product Description:** ${productInfo.description}
+*   **Target Market:** ${productInfo.market}
+*   **Headline/Topic:** ${topic.topic}
+*   **Description for Topic:** ${topic.description}
+---
+**END OF CONTEXT DATA.**
+
+Now, generate ONLY the complete JavaScript code for the React application to be placed inside the \`<script type="module">\` tag.
+        `.trim();
+
+        setPromptModalTitle('AI Studio 生成提示詞');
+        setPromptModalContent(prompt);
+    }, [productInfo, analysisResult, contentStrategy]);
+
+
+    const handleGenerateDocument = useCallback(async (topic: ContentTopic) => {
+        // This function is currently disabled from the UI.
+        if (!productInfo || !analysisResult) return;
+        
+        const topicTitle = topic.topic;
+        setGeneratingTopic(topicTitle);
+        setGammaError(null);
+        setGammaStatusMessage('正在向 Gamma 提交請求...');
+
         try {
-            const result = await createGammaWebpage(topic, contentStrategy.interactiveElements, productUrl);
-            setGeneratedGammaWebpages(prev => ({...prev, [topic.topic]: result}));
-            setActiveWebpageTopic(topic.topic);
+            const { id } = await startGammaGeneration(productInfo, analysisResult, topic);
+            pollingRefs.current[topicTitle] = true;
+            
+            const poll = async (retries = 24) => { // Poll for 2 minutes max (24 * 5s)
+                if (!pollingRefs.current[topicTitle]) return; // Stop if cancelled
+                if (retries <= 0) {
+                    setGammaError('Gamma 文件生成超時。');
+                    setGeneratingTopic(null);
+                    setGammaStatusMessage(null);
+                    delete pollingRefs.current[topicTitle];
+                    return;
+                }
+
+                try {
+                    const result = await checkGammaGenerationStatus(id);
+                    setGammaStatusMessage(`生成狀態：${result.status}...`);
+
+                    if (result.status === 'completed') {
+                        setGeneratedDocuments(prev => ({...prev, [topicTitle]: result}));
+                        setGeneratingTopic(null);
+                        setGammaStatusMessage(null);
+                        delete pollingRefs.current[topicTitle];
+                    } else if (result.status === 'failed') {
+                        setGammaError('Gamma 文件生成失敗。');
+                        setGeneratingTopic(null);
+                        setGammaStatusMessage(null);
+                        delete pollingRefs.current[topicTitle];
+                    } else {
+                        setTimeout(() => poll(retries - 1), 5000); // Poll every 5 seconds
+                    }
+                } catch(err) {
+                     setGammaError(err instanceof Error ? err.message : '輪詢 Gamma 狀態時發生錯誤。');
+                     setGeneratingTopic(null);
+                     setGammaStatusMessage(null);
+                     delete pollingRefs.current[topicTitle];
+                }
+            };
+
+            poll();
+
         } catch (err) {
-            setGammaWebpageError(err instanceof Error ? err.message : 'Gamma API 發生未知錯誤');
-            console.error(err);
-        } finally {
-            setGeneratingGammaTopic(null);
+            setGammaError(err instanceof Error ? err.message : '啟動 Gamma 文件生成時發生錯誤。');
+            setGeneratingTopic(null);
+            setGammaStatusMessage(null);
         }
-    }, [contentStrategy, productUrl]);
+    }, [productInfo, analysisResult]);
+
 
     const handleStartOver = () => {
         setIsLoading(false);
@@ -765,23 +892,17 @@ function App() {
         setStrategyError(null);
         setContentStrategy(null);
         setGeneratingTopic(null);
-        setWebpageError(null);
-        setGeneratedWebpages({});
-        setActiveWebpageTopic(null);
-        setProductUrl('');
-        
-        // 重置 Gamma API 相關狀態
-        setGeneratingGammaTopic(null);
-        setGammaWebpageError(null);
-        setGeneratedGammaWebpages({});
+        setGammaError(null);
+        setGeneratedDocuments({});
+        setGammaStatusMessage(null);
+        setPromptModalContent(null);
+        pollingRefs.current = {};
+        setFormKey(prevKey => prevKey + 1);
     };
     
     const renderContent = () => {
         if (isLoading) return <Loader title="正在進行深度分析..." message="AI 正在分析市場、競爭對手與潛在客戶。" />;
         if (error) return <ErrorDisplay title="分析失敗" message={error} />;
-        
-        const activeWebpage = activeWebpageTopic ? generatedWebpages[activeWebpageTopic] : null;
-        const activeGammaWebpage = activeWebpageTopic ? generatedGammaWebpages[activeWebpageTopic] : null;
 
         return (
             <>
@@ -803,36 +924,34 @@ function App() {
                     <ContentStrategyDisplay 
                         strategy={contentStrategy} 
                         productInfo={productInfo}
-                        onGenerateWebpage={handleGenerateWebpage} 
-                        onGenerateGammaWebpage={handleGenerateGammaWebpage}
-                        productUrl={productUrl} 
-                        setProductUrl={setProductUrl} 
+                        analysisResult={analysisResult}
+                        onGenerateDocument={handleGenerateDocument} 
+                        onGenerateGammaPrompt={handleGenerateGammaPrompt}
+                        onGenerateAIStudioPrompt={handleGenerateAIStudioPrompt}
                         generatingTopic={generatingTopic}
-                        generatingGammaTopic={generatingGammaTopic}
-                        generatedWebpages={generatedWebpages}
-                        generatedGammaWebpages={generatedGammaWebpages}
-                        onViewWebpage={setActiveWebpageTopic}
+                        generatedDocuments={generatedDocuments}
                     />
                 )}
                 
-                {generatingTopic && <Loader title="正在撰寫前導頁..." message="AI 正在產出圖文並茂的 SEO 優化頁面。" icon={<DocumentTextIcon className="w-16 h-16 mx-auto"/>} />}
-                {generatingGammaTopic && <Loader title="正在透過 Gamma 生成前導頁..." message="Gamma API 正在建立專業的前導頁面。" icon={<SparklesIcon className="w-16 h-16 mx-auto"/>} />}
-                {webpageError && <ErrorDisplay title="網頁生成失敗" message={webpageError} />}
-                {gammaWebpageError && <ErrorDisplay title="Gamma 網頁生成失敗" message={gammaWebpageError} />}
-
-                {activeWebpage && <WebpageContentDisplay content={activeWebpage} />}
-                {activeGammaWebpage && <WebpageContentDisplay content={activeGammaWebpage} />}
+                {generatingTopic && <Loader title="正在生成 Gamma 前導頁..." message={gammaStatusMessage || "請稍候..."} icon={<DocumentTextIcon className="w-16 h-16 mx-auto"/>} />}
+                {gammaError && <ErrorDisplay title="前導頁生成失敗" message={gammaError} />}
             </>
         )
     };
 
     return (
         <div className="min-h-screen bg-background font-sans">
-            <main className="container mx-auto px-4 pb-12">
+            <main className="container mx-auto px-4 pb-12 relative">
+                <button 
+                    onClick={() => setIsIntroModalOpen(true)}
+                    className="absolute top-6 right-4 sm:right-6 md:right-8 bg-slate-800 hover:bg-slate-700 text-text-secondary font-semibold py-2 px-4 rounded-lg transition duration-300 ease-in-out text-sm z-10 border border-slate-600"
+                >
+                    功能簡介
+                </button>
                 <Header />
                 <div className="mt-8">
                     {!analysisResult && !isLoading && !error && (
-                        <InputForm onAnalyze={handleAnalyze} isLoading={isLoading} />
+                        <InputForm key={formKey} onAnalyze={handleAnalyze} isLoading={isLoading} />
                     )}
 
                     {renderContent()}
@@ -847,6 +966,14 @@ function App() {
                     )}
                 </div>
             </main>
+            {promptModalContent && (
+                <PromptModal prompt={promptModalContent} title={promptModalTitle} onClose={() => setPromptModalContent(null)} />
+            )}
+            {isIntroModalOpen && (
+                 <InfoModal title="🚀 FlyPig AI 電商增長神器：功能簡介" onClose={() => setIsIntroModalOpen(false)}>
+                    <FeatureIntroductionContent />
+                 </InfoModal>
+            )}
         </div>
     );
 }

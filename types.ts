@@ -36,6 +36,7 @@ export interface AnalysisResult {
 export interface ProductInfo {
   name: string;
   description: string;
+  url?: string;
   image?: {
     base64: string;
     mimeType: string;
@@ -52,15 +53,6 @@ export interface SeoGuidance {
     external: string; // Advice on external links
   };
 }
-
-export interface SeoAnalysis {
-  summary: string;
-  checklist: {
-    item: string; // e.g., "Main keyword in H1 tag"
-    passed: boolean;
-  }[];
-}
-
 
 // --- Content Strategy Types ---
 
@@ -83,25 +75,11 @@ export interface ContentStrategy {
   ctaSuggestions: string[];
 }
 
-// --- Webpage Content Types ---
-
-export interface WebpageContent {
-  title: string;
-  suggestedUrl: string;
-  metaDescription: string;
-  htmlContent: string;
-  seoAnalysis: SeoAnalysis;
-}
-
 // --- Gamma API Types ---
-
-export interface GammaWebpageContent {
-  gammaId: string;
+export interface GammaGenerationResult {
+  id: string;
+  status: 'completed' | 'pending' | 'failed' | 'processing';
   gammaUrl: string;
-  title: string;
-  suggestedUrl: string;
-  metaDescription: string;
-  htmlContent: string;
-  cssContent: string;
-  seoAnalysis: SeoAnalysis;
+  pdfUrl?: string;
+  pptxUrl?: string;
 }

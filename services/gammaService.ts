@@ -1,238 +1,123 @@
-import type { ContentTopic, InteractiveElement, GammaWebpageContent } from '../types';
+import type { ProductInfo, AnalysisResult, ContentTopic, GammaGenerationResult } from '../types';
 
-const GAMMA_API_KEY = process.env.GAMMA_API_KEY;
+const GAMMA_API_URL = 'https://public-api.gamma.app/v0.2/generations';
 
-if (!GAMMA_API_KEY) {
-  throw new Error("GAMMA_API_KEY environment variable not set");
-}
+// In a real-world scenario, use a secure method to handle API keys instead of hardcoding.
+const GAMMA_API_KEY = 'sk-gamma-VNp5x2VOUlFLI9cuAPOyK1c4foYfJcesD24zKIrNA';
 
-// Gamma API 端點配置
-const GAMMA_API_BASE_URL = 'https://api.gamma.app/v1';
+const createDocumentText = (productInfo: ProductInfo, analysis: AnalysisResult, topic: ContentTopic): string => {
+    let text = `# ${topic.topic}\n\n`;
+    text += `*${productInfo.name} - A detailed guide and solution.*\n\n`;
+    text += `---\n`;
 
-// Gamma API 請求介面
-interface GammaCreateRequest {
-  title: string;
-  content: string;
-  template?: string;
-  style?: {
-    theme?: string;
-    colorScheme?: string;
-  };
-}
-
-interface GammaCreateResponse {
-  id: string;
-  url: string;
-  title: string;
-  status: string;
-  created_at: string;
-}
-
-interface GammaWebpageResponse {
-  id: string;
-  url: string;
-  title: string;
-  html_content: string;
-  css_content: string;
-  status: string;
-  created_at: string;
-  updated_at: string;
-}
-
-/**
- * 透過 Gamma API 建立前導頁
- * @param topic 內容主題
- * @param interactiveElements 互動元素
- * @param productUrl 產品網址
- * @returns Gamma 生成的前導頁內容
- */
-export const createGammaWebpage = async (
-  topic: ContentTopic,
-  interactiveElements: InteractiveElement[],
-  productUrl: string
-): Promise<GammaWebpageContent> => {
-  try {
-    // 構建 Gamma API 請求內容
-    const gammaContent = buildGammaContent(topic, interactiveElements, productUrl);
-    
-    // 建立 Gamma 頁面
-    const createResponse = await fetch(`${GAMMA_API_BASE_URL}/pages`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${GAMMA_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        title: topic.topic,
-        content: gammaContent,
-        template: 'landing-page',
-        style: {
-          theme: 'modern',
-          colorScheme: 'light'
-        }
-      } as GammaCreateRequest)
+    const personaSummary = analysis.buyerPersonas.map(p => p.personaName).join(', ');
+    text += `# Is This You? Understanding Our Audience\n\n`;
+    text += `This document is for **${personaSummary}**. We understand you're facing specific challenges.\n\n`;
+    analysis.buyerPersonas.forEach(p => {
+        text += `*   **${p.personaName} (${p.demographics})**: Often struggles with: *${p.painPoints.join(', ')}*. \n`;
     });
+    text += `---\n`;
 
-    if (!createResponse.ok) {
-      const errorText = await createResponse.text();
-      throw new Error(`Gamma API 建立頁面失敗: ${createResponse.status} - ${errorText}`);
+    text += `# The Challenge: Identifying the Core Problem\n\n`;
+    text += `Based on our research, the main obstacles our audience faces are:\n`;
+    analysis.productCoreValue.painPointsSolved.forEach(p => {
+        text += `* ${p}\n`;
+    });
+    text += `These issues can be frustrating and time-consuming.\n`;
+    text += `---\n`;
+    
+    text += `# The Solution: Introducing ${productInfo.name}\n\n`;
+    text += `We've designed the ultimate solution to address these exact problems.\n\n`;
+    text += `**Core Advantages of Our Approach:**\n`;
+     analysis.productCoreValue.coreAdvantages.forEach(p => {
+        text += `* ${p}\n`;
+    });
+    text += `---\n`;
+
+    text += `# How It Works: A Look at the Key Features\n\n`;
+    analysis.productCoreValue.mainFeatures.forEach(p => {
+        const parts = p.split(':');
+        const feature = parts[0];
+        const description = parts.slice(1).join(':').trim();
+        text += `* **${feature}**: ${description}\n`;
+    });
+    text += `---\n`;
+
+    if (analysis.competitorAnalysis.length > 0) {
+        text += `# How We Stand Out from the Competition\n\n`;
+        const competitor = analysis.competitorAnalysis[0];
+        text += `While other solutions like **${competitor.brandName}** exist, our unique focus on solving your core needs sets us apart. We provide tangible benefits where others fall short.\n`;
+        text += `---\n`;
     }
 
-    const createResult: GammaCreateResponse = await createResponse.json();
-    
-    // 等待頁面生成完成
-    await waitForPageGeneration(createResult.id);
-    
-    // 獲取生成的頁面內容
-    const pageResponse = await fetch(`${GAMMA_API_BASE_URL}/pages/${createResult.id}`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${GAMMA_API_KEY}`,
-      }
-    });
+    text += `# Ready to Overcome Your Challenges?\n\n`;
+    text += `Take the next step. Discover how **${productInfo.name}** can make a difference for you today.\n\n`;
 
-    if (!pageResponse.ok) {
-      const errorText = await pageResponse.text();
-      throw new Error(`Gamma API 獲取頁面失敗: ${pageResponse.status} - ${errorText}`);
+    if (productInfo.url) {
+      text += `Visit our official website for more details: ${productInfo.url}`;
     }
-
-    const pageResult: GammaWebpageResponse = await pageResponse.json();
     
-    // 轉換為我們的格式
-    return {
-      gammaId: pageResult.id,
-      gammaUrl: pageResult.url,
-      title: pageResult.title,
-      suggestedUrl: generateUrlSlug(topic.topic),
-      metaDescription: generateMetaDescription(topic),
-      htmlContent: pageResult.html_content,
-      cssContent: pageResult.css_content,
-      seoAnalysis: {
-        summary: `此頁面透過 Gamma API 生成，已針對「${topic.focusKeyword}」進行 SEO 優化。`,
-        checklist: [
-          { item: '主要關鍵字在標題中', passed: true },
-          { item: 'Meta 描述包含關鍵字', passed: true },
-          { item: '響應式設計', passed: true },
-          { item: '圖片 alt 文字優化', passed: true },
-          { item: '內部連結策略', passed: true },
-          { item: '頁面載入速度優化', passed: true }
-        ]
-      }
-    };
-
-  } catch (error) {
-    console.error('Gamma API 錯誤:', error);
-    throw new Error(`Gamma API 整合失敗: ${error instanceof Error ? error.message : '未知錯誤'}`);
-  }
+    return text;
 };
 
-/**
- * 構建 Gamma API 所需的內容格式
- */
-function buildGammaContent(
-  topic: ContentTopic,
-  interactiveElements: InteractiveElement[],
-  productUrl: string
-): string {
-  return `
-# ${topic.topic}
 
-## 主要關鍵字
-${topic.focusKeyword}
+export const startGammaGeneration = async (productInfo: ProductInfo, analysis: AnalysisResult, topic: ContentTopic): Promise<{ id: string }> => {
+    if (!GAMMA_API_KEY) {
+        throw new Error("Gamma API Key is not configured. Please set the GAMMA_API_KEY environment variable.");
+    }
+    
+    const inputText = createDocumentText(productInfo, analysis, topic);
 
-## 長尾關鍵字
-${topic.longTailKeywords.join(', ')}
+    const response = await fetch(GAMMA_API_URL, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-API-KEY': GAMMA_API_KEY,
+        },
+        body: JSON.stringify({
+            inputText,
+            textMode: 'generate',
+            format: 'document',
+            cardSplit: 'inputTextBreaks',
+            additionalInstructions: `Create a visually appealing and professional single-page document, suitable for a web landing page. Use high-quality, relevant stock images. The tone should be inspiring, professional, and persuasive. The target audience is ${analysis.marketPositioning.consumerHabits}. Structure it clearly with headers and sections.`,
+            imageOptions: {
+                source: 'webAllImages',
+            },
+            cardOptions: {
+                dimensions: 'pageless'
+            },
+        }),
+    });
 
-## 內容描述
-${topic.description}
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to start Gamma generation and could not parse error response.' }));
+        console.error('Gamma API Error:', errorData);
+        throw new Error(errorData.message || 'Failed to start Gamma generation.');
+    }
 
-## SEO 指導
-- 關鍵字密度: ${topic.seoGuidance.keywordDensity}
-- 語意關鍵字: ${topic.seoGuidance.semanticKeywords.join(', ')}
-- 內部連結策略: ${topic.seoGuidance.linkingStrategy.internal}
-- 外部連結策略: ${topic.seoGuidance.linkingStrategy.external}
+    const data = await response.json();
+    return { id: data.generationId };
+};
 
-## 互動元素
-${interactiveElements.map(el => `- ${el.type}: ${el.description}`).join('\n')}
+export const checkGammaGenerationStatus = async (id: string): Promise<GammaGenerationResult> => {
+    if (!GAMMA_API_KEY) {
+        throw new Error("Gamma API Key is not configured.");
+    }
 
-## 產品連結
-${productUrl}
-
-## 頁面結構建議
-1. 吸引人的標題 (H1)
-2. 問題描述段落
-3. 解決方案介紹
-4. 產品特色與優勢
-5. 客戶見證或案例
-6. 強烈的行動呼籲 (CTA)
-7. 聯絡資訊
-
-## 設計要求
-- 使用現代化設計風格
-- 響應式布局
-- 清晰的視覺層次
-- 突出的 CTA 按鈕
-- 專業的配色方案
-  `.trim();
-}
-
-/**
- * 等待頁面生成完成
- */
-async function waitForPageGeneration(pageId: string, maxWaitTime: number = 30000): Promise<void> {
-  const startTime = Date.now();
-  const pollInterval = 2000; // 2秒檢查一次
-
-  while (Date.now() - startTime < maxWaitTime) {
-    try {
-      const response = await fetch(`${GAMMA_API_BASE_URL}/pages/${pageId}`, {
+    const response = await fetch(`${GAMMA_API_URL}/${id}`, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${GAMMA_API_KEY}`,
-        }
-      });
+            'Accept': 'application/json',
+            'X-API-KEY': GAMMA_API_KEY,
+        },
+    });
 
-      if (response.ok) {
-        const pageData: GammaWebpageResponse = await response.json();
-        if (pageData.status === 'completed') {
-          return;
-        }
-      }
-
-      await new Promise(resolve => setTimeout(resolve, pollInterval));
-    } catch (error) {
-      console.warn('檢查頁面狀態時發生錯誤:', error);
-      await new Promise(resolve => setTimeout(resolve, pollInterval));
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to check Gamma status and could not parse error response.' }));
+        console.error('Gamma API Error:', errorData);
+        throw new Error(errorData.message || 'Failed to check Gamma generation status.');
     }
-  }
 
-  throw new Error('頁面生成超時，請稍後再試');
-}
-
-/**
- * 生成 URL slug
- */
-function generateUrlSlug(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .trim();
-}
-
-/**
- * 生成 Meta 描述
- */
-function generateMetaDescription(topic: ContentTopic): string {
-  const baseDescription = topic.description;
-  const keyword = topic.focusKeyword;
-  
-  // 確保描述長度在 150-160 字元之間
-  let description = `${baseDescription} 了解${keyword}的最新趨勢與實用技巧。`;
-  
-  if (description.length > 160) {
-    description = baseDescription.substring(0, 140) + '...';
-  }
-  
-  return description;
-}
+    const data = await response.json();
+    return data.generation as GammaGenerationResult; 
+};
