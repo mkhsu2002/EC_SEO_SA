@@ -1,7 +1,20 @@
-import React, { useState, useCallback, useEffect } from 'react';
+
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { analyzeMarket, generateContentStrategy } from './services/geminiService';
 import { startGammaGeneration, checkGammaGenerationStatus } from './services/gammaService';
-import type { AnalysisResult, BuyerPersona, Competitor, ProductInfo, ContentStrategy, ContentTopic, InteractiveElement, GammaGenerationResult } from './types';
+import { 
+    onAuthStateChangedListener,
+    signOutUser,
+    signUpWithEmail,
+    signInWithEmail,
+    getUserData,
+    incrementUserAnalysisCount,
+    logAnalysis,
+    getUsers,
+    downloadUsersCsv,
+} from './services/firebaseService';
+import { createEcpayOrder } from './services/paymentService';
+import type { AnalysisResult, BuyerPersona, Competitor, ProductInfo, ContentStrategy, ContentTopic, InteractiveElement, GammaGenerationResult, AdminUserView } from './types';
 
 // --- Helper Functions ---
 const fileToBase64 = (file: File): Promise<string> =>
@@ -11,6 +24,23 @@ const fileToBase64 = (file: File): Promise<string> =>
     reader.onload = () => resolve((reader.result as string).split(',')[1]);
     reader.onerror = error => reject(error);
   });
+
+const mapFirebaseAuthError = (errorCode: string): string => {
+    switch (errorCode) {
+        case 'auth/wrong-password':
+            return '密碼錯誤，請重新輸入。';
+        case 'auth/user-not-found':
+            return '此電子郵件尚未註冊。';
+        case 'auth/email-already-in-use':
+            return '此電子郵件已被註冊。';
+        case 'auth/invalid-email':
+            return '電子郵件格式無效。';
+        case 'auth/weak-password':
+            return '密碼強度不足，請設定至少6個字元。';
+        default:
+            return '發生未知錯誤，請稍後再試。';
+    }
+};
 
 // --- SVG Icon Components ---
 const ChartBarIcon: React.FC<{ className?: string }> = ({ className }) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg>);
@@ -22,14 +52,35 @@ const ArrowPathIcon: React.FC<{ className?: string }> = ({ className }) => ( <sv
 const ArrowDownTrayIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>);
 const EyeIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>);
 const CodeBracketIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 15" /></svg>);
+const ShieldCheckIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.286Zm0 13.036h.008v.008H12v-.008Z" /></svg>);
 
 
 // --- UI Components ---
 
-const Header: React.FC = () => (
-    <header className="w-full text-center py-6 border-b border-slate-700">
+interface HeaderProps {
+    userEmail?: string | null;
+    onLogout?: () => void;
+    isAdmin?: boolean;
+    isAdminView: boolean;
+    setIsAdminView: (isAdminView: boolean) => void;
+}
+const Header: React.FC<HeaderProps> = ({ userEmail, onLogout, isAdmin, isAdminView, setIsAdminView }) => (
+    <header className="w-full text-center py-6 border-b border-slate-700 relative">
         <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-600">FlyPig AI 電商增長神器 v1.9</h1>
         <p className="text-text-secondary mt-2">從市場洞察到前導頁生成，一站式 AI 解決方案。</p>
+        {userEmail && onLogout && (
+             <div className="absolute top-1/2 -translate-y-1/2 right-4 text-sm text-text-secondary flex items-center space-x-3">
+                <span className="hidden sm:inline">{userEmail}</span>
+                {isAdmin && (
+                     <button onClick={() => setIsAdminView(!isAdminView)} className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-md transition">
+                        {isAdminView ? '返回主頁' : '管理員後台'}
+                    </button>
+                )}
+                <button onClick={onLogout} className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-md transition">
+                    登出
+                </button>
+            </div>
+        )}
     </header>
 );
 
@@ -621,10 +672,257 @@ const FeatureIntroductionContent: React.FC = () => (
     </>
 );
 
+const AuthComponent: React.FC = () => {
+    const [isRegisterMode, setIsRegisterMode] = useState(false);
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            setError('請輸入有效的電子郵件地址。');
+            return;
+        }
+        if (password.length < 6) {
+            setError('密碼長度至少需要6個字元。');
+            return;
+        }
+        
+        setIsLoading(true);
+        setError('');
+        try {
+            if (isRegisterMode) {
+                await signUpWithEmail(email, password);
+            } else {
+                await signInWithEmail(email, password);
+            }
+            // On success, the onAuthStateChanged listener in App.tsx will handle the rest.
+        } catch (err: any) {
+            if (err.code) { // It's likely a Firebase Auth error
+                setError(mapFirebaseAuthError(err.code));
+            } else { // It's likely a Firestore error or another issue
+                console.error("Registration failed:", err);
+                setError("無法建立使用者資料庫，請檢查後台設定。");
+            }
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <div className="w-full max-w-md mx-auto mt-20 text-center animate-fade-in">
+            <div className="bg-surface p-8 rounded-lg shadow-lg border border-slate-700">
+                <SparklesIcon className="w-16 h-16 mx-auto text-brand-secondary mb-4" />
+                <h2 className="text-2xl font-bold text-text-primary mb-2">{isRegisterMode ? '註冊新帳號' : '會員登入'}</h2>
+                <p className="text-text-secondary mb-6">每個帳號僅限免費生成一次市場分析報告。</p>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <input
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder="請輸入您的電子郵件"
+                            required
+                            className="w-full bg-slate-800 border border-slate-600 rounded-md p-3 focus:ring-2 focus:ring-brand-secondary focus:outline-none transition"
+                        />
+                    </div>
+                    <div>
+                        <input
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            placeholder="請輸入密碼 (至少6位數)"
+                            required
+                            className="w-full bg-slate-800 border border-slate-600 rounded-md p-3 focus:ring-2 focus:ring-brand-secondary focus:outline-none transition"
+                        />
+                    </div>
+                    {error && <p className="text-red-400 text-sm h-5">{error}</p>}
+                    <button
+                        type="submit"
+                        disabled={isLoading}
+                        className="w-full bg-brand-secondary hover:bg-brand-dark text-white font-bold py-3 px-4 rounded-md transition duration-300 ease-in-out transform hover:scale-105 flex items-center justify-center disabled:bg-slate-600 disabled:cursor-not-allowed"
+                    >
+                        {isLoading ? (
+                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                        ) : (
+                            isRegisterMode ? '註冊' : '登入'
+                        )}
+                    </button>
+                </form>
+                <button 
+                    onClick={() => setIsRegisterMode(!isRegisterMode)}
+                    className="mt-4 text-sm text-brand-secondary hover:underline"
+                >
+                    {isRegisterMode ? '已經有帳號了？點此登入' : '還沒有帳號？點此註冊'}
+                </button>
+            </div>
+        </div>
+    );
+};
+
+
+const LimitReachedDisplay: React.FC<{ onLogout: () => void; onCreatePayment: () => void; isCreatingPayment: boolean; }> = ({ onLogout, onCreatePayment, isCreatingPayment }) => (
+    <div className="w-full max-w-2xl mx-auto text-center py-20 animate-fade-in">
+         <div className="bg-surface p-8 rounded-lg shadow-lg border border-slate-700">
+            <SparklesIcon className="w-16 h-16 mx-auto text-brand-secondary mb-4"/>
+            <h2 className="text-2xl font-bold text-text-primary mb-2">升級解鎖無限次分析！</h2>
+            <p className="text-text-secondary mb-6">您的免費分析額度已用完。立即升級至專業版，即可無限次使用所有強大功能，加速您的電商業務增長。</p>
+            <button
+                onClick={onCreatePayment}
+                disabled={isCreatingPayment}
+                className="bg-brand-secondary hover:bg-brand-dark text-white font-bold py-3 px-8 rounded-md transition duration-300 ease-in-out transform hover:scale-105 inline-flex items-center text-lg disabled:bg-slate-600 disabled:cursor-not-allowed"
+            >
+                {isCreatingPayment ? '訂單建立中...' : '立即升級專業版 (NT$300)'}
+                {isCreatingPayment && <div className="ml-3 border-t-transparent border-solid animate-spin rounded-full border-white border-2 h-5 w-5"></div>}
+            </button>
+            <button
+                onClick={onLogout}
+                className="mt-4 text-sm text-slate-400 hover:text-white transition duration-300"
+            >
+                或登出使用其他帳號
+            </button>
+        </div>
+    </div>
+);
+
+type EcpyOrderParams = {
+    [key: string]: string;
+};
+
+const EcpyPaymentForm: React.FC<{ params: EcpyOrderParams; actionUrl: string }> = ({ params, actionUrl }) => {
+    const formRef = useRef<HTMLFormElement>(null);
+
+    useEffect(() => {
+        if (formRef.current) {
+            formRef.current.submit();
+        }
+    }, []);
+
+    return (
+        <div style={{ display: 'none' }}>
+            <form ref={formRef} action={actionUrl} method="POST">
+                {Object.entries(params).map(([key, value]) => (
+                    <input key={key} type="hidden" name={key} value={value} />
+                ))}
+            </form>
+        </div>
+    );
+};
+
+const AdminDashboard: React.FC = () => {
+    const [users, setUsers] = useState<AdminUserView[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [isDownloading, setIsDownloading] = useState(false);
+
+    useEffect(() => {
+        const fetchUsers = async () => {
+            try {
+                setIsLoading(true);
+                setError(null);
+                const fetchedUsers = await getUsers();
+                setUsers(fetchedUsers);
+            } catch (err) {
+                setError(err instanceof Error ? err.message : '無法獲取使用者資料');
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        fetchUsers();
+    }, []);
+
+    const handleDownload = async () => {
+        setIsDownloading(true);
+        try {
+            const { csvData } = await downloadUsersCsv();
+            const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `flypig_ai_users_${new Date().toISOString().split('T')[0]}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } catch (err) {
+             alert(`下載失敗: ${err instanceof Error ? err.message : '未知錯誤'}`);
+        } finally {
+            setIsDownloading(false);
+        }
+    };
+
+    return (
+        <div className="w-full max-w-6xl mx-auto py-8 animate-fade-in">
+            <ResultCard 
+                title="管理員後台" 
+                icon={<ShieldCheckIcon className="w-8 h-8"/>}
+                titleAction={
+                     <button 
+                        onClick={handleDownload}
+                        disabled={isDownloading}
+                        className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out text-sm inline-flex items-center disabled:bg-slate-600 disabled:cursor-not-allowed"
+                    >
+                        <ArrowDownTrayIcon className="w-5 h-5 mr-2" />
+                        {isDownloading ? '下載中...' : '下載會員資料 (CSV)'}
+                    </button>
+                }
+            >
+                <p className="text-text-secondary mb-6">此處顯示所有已註冊的會員資料。</p>
+                {isLoading && <Loader title="正在載入會員資料..." message="請稍候..." />}
+                {error && <ErrorDisplay title="載入失敗" message={error} />}
+                {!isLoading && !error && (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left text-text-secondary">
+                            <thead className="text-xs text-text-primary uppercase bg-slate-700">
+                                <tr>
+                                    <th scope="col" className="px-6 py-3">Email</th>
+                                    <th scope="col" className="px-6 py-3">註冊時間</th>
+                                    <th scope="col" className="px-6 py-3 text-center">分析次數</th>
+                                    <th scope="col" className="px-6 py-3 text-center">付費狀態</th>
+                                    <th scope="col" className="px-6 py-3">UID</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {users.map(user => (
+                                    <tr key={user.uid} className="bg-surface border-b border-slate-700 hover:bg-slate-800">
+                                        <th scope="row" className="px-6 py-4 font-medium text-text-primary whitespace-nowrap">{user.email}</th>
+                                        <td className="px-6 py-4">{new Date(user.createdAt).toLocaleString()}</td>
+                                        <td className="px-6 py-4 text-center">{user.analysisCount}</td>
+                                        <td className="px-6 py-4 text-center">
+                                            {user.isPaid ? (
+                                                <span className="px-2 py-1 text-xs font-medium text-green-300 bg-green-900 rounded-full">已付費</span>
+                                            ) : (
+                                                <span className="px-2 py-1 text-xs font-medium text-yellow-300 bg-yellow-900 rounded-full">未付費</span>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4 font-mono text-xs">{user.uid}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </ResultCard>
+        </div>
+    );
+};
+
 
 // --- Main App Component ---
 
+type User = {
+    uid: string;
+    email: string | null;
+    analysisCount: number;
+    isPaid?: boolean;
+    isAdmin?: boolean;
+};
+
 function App() {
+    const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
@@ -644,11 +942,61 @@ function App() {
     const [promptModalTitle, setPromptModalTitle] = useState('');
     
     const [isIntroModalOpen, setIsIntroModalOpen] = useState(false);
+    
+    const [isCreatingPayment, setIsCreatingPayment] = useState(false);
+    const [ecpyOrder, setEcpyOrder] = useState<{ params: EcpyOrderParams; actionUrl: string } | null>(null);
+    
+    const [isAdminView, setIsAdminView] = useState(false);
 
+    const pollingRefs = useRef<Record<string, boolean>>({});
 
-    const pollingRefs = React.useRef<Record<string, boolean>>({});
+    const handleStartOver = useCallback(() => {
+        setIsLoading(false);
+        setError(null);
+        setAnalysisResult(null);
+        setProductInfo(null);
+        setIsGeneratingStrategy(false);
+        setStrategyError(null);
+        setContentStrategy(null);
+        setGeneratingTopic(null);
+        setGammaError(null);
+        setGeneratedDocuments({});
+        setGammaStatusMessage(null);
+        setPromptModalContent(null);
+        pollingRefs.current = {};
+        setFormKey(prevKey => prevKey + 1);
+        setIsAdminView(false);
+    }, []);
+
+    useEffect(() => {
+        const unsubscribe = onAuthStateChangedListener(async (userAuth) => {
+            if (userAuth) {
+                const userData = await getUserData(userAuth.uid);
+                const idTokenResult = await userAuth.getIdTokenResult();
+                
+                if (userData) {
+                    setCurrentUser({
+                        uid: userAuth.uid,
+                        email: userAuth.email,
+                        analysisCount: (userData.analysisCount as number) || 0,
+                        isPaid: (userData.isPaid as boolean) || false,
+                        isAdmin: idTokenResult.claims.admin === true,
+                    });
+                } else {
+                    console.error("User exists in Auth but not in Firestore. This might happen if Firestore doc creation failed during signup.");
+                    signOutUser(); // Log them out to prevent being in a broken state
+                }
+            } else {
+                setCurrentUser(null);
+                handleStartOver();
+            }
+        });
+        return unsubscribe; // Cleanup subscription on unmount
+    }, [handleStartOver]);
 
     const handleAnalyze = useCallback(async (productInfo: ProductInfo) => {
+        if (!currentUser || (currentUser.analysisCount >= 1 && !currentUser.isPaid)) return;
+
         setProductInfo(productInfo);
         setIsLoading(true);
         setError(null);
@@ -656,13 +1004,21 @@ function App() {
         try {
             const result = await analyzeMarket(productInfo);
             setAnalysisResult(result);
+
+            // Log analysis and increment user's analysis count in Firestore
+            await incrementUserAnalysisCount(currentUser.uid);
+            await logAnalysis(currentUser.uid, currentUser.email, productInfo, result);
+
+            // Update local user state to reflect the change immediately
+            setCurrentUser(prevUser => prevUser ? { ...prevUser, analysisCount: prevUser.analysisCount + 1 } : null);
+
         } catch (err) {
             setError(err instanceof Error ? err.message : '發生未知錯誤');
             console.error(err);
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [currentUser]);
     
     const handleGenerateStrategy = useCallback(async () => {
         if (!analysisResult) return;
@@ -679,6 +1035,24 @@ function App() {
             setIsGeneratingStrategy(false);
         }
     }, [analysisResult]);
+
+    const handleCreatePayment = useCallback(async () => {
+        if (!currentUser) return;
+        setIsCreatingPayment(true);
+        setError(null);
+        try {
+            const orderDetails = await createEcpayOrder();
+            const { actionUrl, ...params } = orderDetails;
+            setEcpyOrder({ params, actionUrl });
+        } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : '建立付款時發生錯誤';
+            setError(errorMessage);
+            setEcpyOrder(null);
+        } finally {
+            setIsCreatingPayment(false);
+        }
+    }, [currentUser]);
+
 
     const handleGenerateGammaPrompt = useCallback((topic: ContentTopic) => {
         if (!productInfo || !analysisResult || !contentStrategy) return;
@@ -882,25 +1256,7 @@ Now, generate ONLY the complete JavaScript code for the React application to be 
         }
     }, [productInfo, analysisResult]);
 
-
-    const handleStartOver = () => {
-        setIsLoading(false);
-        setError(null);
-        setAnalysisResult(null);
-        setProductInfo(null);
-        setIsGeneratingStrategy(false);
-        setStrategyError(null);
-        setContentStrategy(null);
-        setGeneratingTopic(null);
-        setGammaError(null);
-        setGeneratedDocuments({});
-        setGammaStatusMessage(null);
-        setPromptModalContent(null);
-        pollingRefs.current = {};
-        setFormKey(prevKey => prevKey + 1);
-    };
-    
-    const renderContent = () => {
+    const renderMainContent = () => {
         if (isLoading) return <Loader title="正在進行深度分析..." message="AI 正在分析市場、競爭對手與潛在客戶。" />;
         if (error) return <ErrorDisplay title="分析失敗" message={error} />;
 
@@ -938,6 +1294,44 @@ Now, generate ONLY the complete JavaScript code for the React application to be 
             </>
         )
     };
+    
+    const renderAppBody = () => {
+        if (!currentUser) {
+            return <div className="text-center py-20">載入中...</div>;
+        }
+
+        if (isAdminView) {
+            return <AdminDashboard />;
+        }
+
+        if (currentUser.analysisCount >= 1 && !currentUser.isPaid) {
+            return <LimitReachedDisplay 
+                onLogout={signOutUser} 
+                onCreatePayment={handleCreatePayment} 
+                isCreatingPayment={isCreatingPayment}
+            />;
+        }
+        
+        if (!analysisResult && !isLoading && !error) {
+            return <InputForm key={formKey} onAnalyze={handleAnalyze} isLoading={isLoading} />;
+        }
+
+        return (
+            <>
+                {renderMainContent()}
+                
+                {(analysisResult || error) && !isLoading && !isGeneratingStrategy && (
+                     <div className="w-full max-w-6xl mx-auto text-center mt-12">
+                         <button onClick={currentUser.isPaid ? handleStartOver : signOutUser} className="text-sm text-slate-400 hover:text-white transition duration-300 inline-flex items-center">
+                             <ArrowPathIcon className="w-4 h-4 mr-2" />
+                             {currentUser.isPaid ? '開始新分析' : '登出並使用新帳號'}
+                         </button>
+                     </div>
+                )}
+            </>
+        );
+    };
+
 
     return (
         <div className="min-h-screen bg-background font-sans">
@@ -948,21 +1342,18 @@ Now, generate ONLY the complete JavaScript code for the React application to be 
                 >
                     功能簡介
                 </button>
-                <Header />
+                <Header 
+                    userEmail={currentUser?.email} 
+                    onLogout={signOutUser} 
+                    isAdmin={currentUser?.isAdmin}
+                    isAdminView={isAdminView}
+                    setIsAdminView={setIsAdminView}
+                />
                 <div className="mt-8">
-                    {!analysisResult && !isLoading && !error && (
-                        <InputForm key={formKey} onAnalyze={handleAnalyze} isLoading={isLoading} />
-                    )}
-
-                    {renderContent()}
-                    
-                    {(analysisResult || error) && !isLoading && !isGeneratingStrategy && (
-                         <div className="w-full max-w-6xl mx-auto text-center mt-12">
-                             <button onClick={handleStartOver} className="text-sm text-slate-400 hover:text-white transition duration-300 inline-flex items-center">
-                                 <ArrowPathIcon className="w-4 h-4 mr-2" />
-                                 開始新分析
-                             </button>
-                         </div>
+                    {!currentUser ? (
+                         <AuthComponent />
+                    ) : (
+                        renderAppBody()
                     )}
                 </div>
             </main>
@@ -974,6 +1365,7 @@ Now, generate ONLY the complete JavaScript code for the React application to be 
                     <FeatureIntroductionContent />
                  </InfoModal>
             )}
+            {ecpyOrder && <EcpyPaymentForm params={ecpyOrder.params} actionUrl={ecpyOrder.actionUrl} />}
         </div>
     );
 }

@@ -83,3 +83,12 @@ export interface GammaGenerationResult {
   pdfUrl?: string;
   pptxUrl?: string;
 }
+
+// --- Admin Types ---
+export interface AdminUserView {
+    uid: string;
+    email: string | null;
+    createdAt: string;
+    analysisCount: number;
+    isPaid: boolean;
+}
