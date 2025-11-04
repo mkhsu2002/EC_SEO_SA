@@ -1,20 +1,6 @@
-
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { analyzeMarket, generateContentStrategy } from './services/geminiService';
-import { startGammaGeneration, checkGammaGenerationStatus } from './services/gammaService';
-import { 
-    onAuthStateChangedListener,
-    signOutUser,
-    signUpWithEmail,
-    signInWithEmail,
-    getUserData,
-    incrementUserAnalysisCount,
-    logAnalysis,
-    getUsers,
-    downloadUsersCsv,
-} from './services/firebaseService';
-import { createEcpayOrder } from './services/paymentService';
-import type { AnalysisResult, BuyerPersona, Competitor, ProductInfo, ContentStrategy, ContentTopic, InteractiveElement, GammaGenerationResult, AdminUserView } from './types';
+import React, { useState, useCallback } from 'react';
+import { analyzeMarket, generateContentStrategy, generateWebpageContent } from './services/geminiService';
+import type { AnalysisResult, BuyerPersona, Competitor, ProductInfo, ContentStrategy, ContentTopic, InteractiveElement, WebpageContent, SeoAnalysis } from './types';
 
 // --- Helper Functions ---
 const fileToBase64 = (file: File): Promise<string> =>
@@ -25,23 +11,6 @@ const fileToBase64 = (file: File): Promise<string> =>
     reader.onerror = error => reject(error);
   });
 
-const mapFirebaseAuthError = (errorCode: string): string => {
-    switch (errorCode) {
-        case 'auth/wrong-password':
-            return '密碼錯誤，請重新輸入。';
-        case 'auth/user-not-found':
-            return '此電子郵件尚未註冊。';
-        case 'auth/email-already-in-use':
-            return '此電子郵件已被註冊。';
-        case 'auth/invalid-email':
-            return '電子郵件格式無效。';
-        case 'auth/weak-password':
-            return '密碼強度不足，請設定至少6個字元。';
-        default:
-            return '發生未知錯誤，請稍後再試。';
-    }
-};
-
 // --- SVG Icon Components ---
 const ChartBarIcon: React.FC<{ className?: string }> = ({ className }) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg>);
 const DocumentTextIcon: React.FC<{ className?: string }> = ({ className }) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>);
@@ -49,38 +18,25 @@ const UserGroupIcon: React.FC<{ className?: string }> = ({ className }) => ( <sv
 const LightBulbIcon: React.FC<{ className?: string }> = ({ className }) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.311a6.01 6.01 0 0 0 4.5 0m-8.625-1.401a6.01 6.01 0 0 1 4.5 0m-4.5 0a3.75 3.75 0 0 0-3.75 3.75H3a3.75 3.75 0 0 0 3.75-3.75m6.75-3a3.75 3.75 0 0 0 3.75-3.75V3a3.75 3.75 0 0 0-3.75-3.75S9 3 9 3v6.75a3.75 3.75 0 0 0 3.75 3.75Z" /></svg>);
 const SparklesIcon: React.FC<{ className?: string }> = ({ className }) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z" /></svg>);
 const ArrowPathIcon: React.FC<{ className?: string }> = ({ className }) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 11.667 0l3.181-3.183m-3.181-4.991-3.181-3.183a8.25 8.25 0 0 0-11.667 0L2.985 14.651" /></svg>);
+const ClipboardIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a2.25 2.25 0 0 1-2.25 2.25h-1.5a2.25 2.25 0 0 1-2.25-2.25v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" /></svg>);
+const CheckIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>);
+const XCircleIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>);
+const GlobeAltIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 0 0 8.716-6.747M12 21a9.004 9.004 0 0 1-8.716-6.747M12 21c.504 0 1.002-.023 1.493-.067M12 21c-.504 0-1.002-.023-1.493-.067M12 3c.504 0 1.002.023 1.493.067M12 3c-.504 0-1.002-.023-1.493-.067M12 3a9.004 9.004 0 0 0-8.716 6.747M12 3a9.004 9.004 0 0 1 8.716 6.747M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9h16.5m-16.5 6h16.5" />
+    </svg>
+);
 const ArrowDownTrayIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>);
 const EyeIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>);
-const CodeBracketIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 15" /></svg>);
-const ShieldCheckIcon: React.FC<{ className?: string }> = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.286Zm0 13.036h.008v.008H12v-.008Z" /></svg>);
 
 
 // --- UI Components ---
 
-interface HeaderProps {
-    userEmail?: string | null;
-    onLogout?: () => void;
-    isAdmin?: boolean;
-    isAdminView: boolean;
-    setIsAdminView: (isAdminView: boolean) => void;
-}
-const Header: React.FC<HeaderProps> = ({ userEmail, onLogout, isAdmin, isAdminView, setIsAdminView }) => (
-    <header className="w-full text-center py-6 border-b border-slate-700 relative">
-        <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-600">FlyPig AI 電商增長神器 v1.9</h1>
-        <p className="text-text-secondary mt-2">從市場洞察到前導頁生成，一站式 AI 解決方案。</p>
-        {userEmail && onLogout && (
-             <div className="absolute top-1/2 -translate-y-1/2 right-4 text-sm text-text-secondary flex items-center space-x-3">
-                <span className="hidden sm:inline">{userEmail}</span>
-                {isAdmin && (
-                     <button onClick={() => setIsAdminView(!isAdminView)} className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-md transition">
-                        {isAdminView ? '返回主頁' : '管理員後台'}
-                    </button>
-                )}
-                <button onClick={onLogout} className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-md transition">
-                    登出
-                </button>
-            </div>
-        )}
+const Header: React.FC = () => (
+    <header className="w-full text-center py-6 border-b border-slate-700">
+        <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-600">FlyPig AI 市場分析 PRO</h1>
+        <p className="text-text-secondary mt-2">您的 AI 驅動專家，提供全面的市場與 SEO 分析。</p>
     </header>
 );
 
@@ -90,7 +46,6 @@ interface InputFormProps {
 }
 const InputForm: React.FC<InputFormProps> = ({ onAnalyze, isLoading }) => {
     const [productName, setProductName] = useState('');
-    const [productUrl, setProductUrl] = useState('');
     const [productDescription, setProductDescription] = useState('');
     const [targetMarket, setTargetMarket] = useState('');
     const [imageFile, setImageFile] = useState<File | null>(null);
@@ -100,7 +55,7 @@ const InputForm: React.FC<InputFormProps> = ({ onAnalyze, isLoading }) => {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!productName || !productDescription || !targetMarket) {
-            alert("請填寫所有必要的文字欄位。");
+            alert("請填寫所有文字欄位。");
             return;
         }
         let imagePayload: ProductInfo['image'];
@@ -108,7 +63,7 @@ const InputForm: React.FC<InputFormProps> = ({ onAnalyze, isLoading }) => {
             const base64 = await fileToBase64(imageFile);
             imagePayload = { base64, mimeType: imageFile.type };
         }
-        onAnalyze({ name: productName, url: productUrl, description: productDescription, market: targetMarket, image: imagePayload });
+        onAnalyze({ name: productName, description: productDescription, market: targetMarket, image: imagePayload });
     };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -130,10 +85,6 @@ const InputForm: React.FC<InputFormProps> = ({ onAnalyze, isLoading }) => {
              <div className="space-y-2">
                 <label htmlFor="productName" className="font-medium text-text-secondary">產品名稱</label>
                 <input id="productName" type="text" value={productName} onChange={e => setProductName(e.target.value)} placeholder="例如：人體工學辦公椅" required className="w-full bg-slate-800 border border-slate-700 rounded-md p-3 focus:ring-2 focus:ring-brand-secondary focus:outline-none transition" />
-            </div>
-            <div className="space-y-2">
-                <label htmlFor="productUrl" className="font-medium text-text-secondary">產品連結網址 (選填)</label>
-                <input id="productUrl" type="url" value={productUrl} onChange={e => setProductUrl(e.target.value)} placeholder="https://example.com/product-page" className="w-full bg-slate-800 border border-slate-700 rounded-md p-3 focus:ring-2 focus:ring-brand-secondary focus:outline-none transition" />
             </div>
             <div className="space-y-2">
                 <label htmlFor="productDescription" className="font-medium text-text-secondary">產品描述與特色</label>
@@ -221,9 +172,6 @@ const AnalysisResultDisplay: React.FC<{ result: AnalysisResult; productInfo: Pro
 
         const generateMarkdownReport = () => {
             let report = `# ${productInfo.name} - 市場分析報告\n\n`;
-            if (productInfo.url) {
-                report += `**產品連結:** [${productInfo.url}](${productInfo.url})\n\n`;
-            }
 
             report += `## 產品核心價值\n\n`;
             report += `### 主要特色\n${productCoreValue.mainFeatures.map(f => `- ${f}`).join('\n')}\n\n`;
@@ -284,6 +232,7 @@ const AnalysisResultDisplay: React.FC<{ result: AnalysisResult; productInfo: Pro
                     </button>
                 }
              >
+                {/* FIX: The ResultCard component requires a `children` prop. A comment-only child can be ignored by the type-checker, causing an error. Added a descriptive paragraph as a valid child. */}
                 <p className="text-text-secondary">以下是根據您提供的產品資訊生成的綜合市場分析報告。</p>
              </ResultCard>
 
@@ -361,15 +310,15 @@ const PersonaCard: React.FC<{ persona: BuyerPersona }> = ({ persona }) => (
 interface ContentStrategyDisplayProps {
   strategy: ContentStrategy;
   productInfo: ProductInfo | null;
-  analysisResult: AnalysisResult | null;
-  onGenerateDocument: (topic: ContentTopic) => void;
-  onGenerateGammaPrompt: (topic: ContentTopic) => void;
-  onGenerateAIStudioPrompt: (topic: ContentTopic) => void;
+  onGenerateWebpage: (topic: ContentTopic) => void;
+  productUrl: string;
+  setProductUrl: (url: string) => void;
   generatingTopic: string | null;
-  generatedDocuments: Record<string, GammaGenerationResult>;
+  generatedWebpages: Record<string, WebpageContent>;
+  onViewWebpage: (topicTitle: string) => void;
 }
 
-const ContentStrategyDisplay: React.FC<ContentStrategyDisplayProps> = ({ strategy, productInfo, analysisResult, onGenerateDocument, onGenerateGammaPrompt, onGenerateAIStudioPrompt, generatingTopic, generatedDocuments }) => {
+const ContentStrategyDisplay: React.FC<ContentStrategyDisplayProps> = ({ strategy, productInfo, onGenerateWebpage, productUrl, setProductUrl, generatingTopic, generatedWebpages, onViewWebpage }) => {
     
     const handleDownload = () => {
         if (!productInfo) return;
@@ -434,21 +383,26 @@ const ContentStrategyDisplay: React.FC<ContentStrategyDisplayProps> = ({ strateg
         >
             <div className="space-y-8">
                  <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
-                    <h4 className="text-xl font-bold text-brand-light mb-3">第三步：生成前導頁與提示詞</h4>
-                    <p className="text-text-secondary mb-4 text-sm">選擇下方一個主題，生成適用於不同平台的提示詞，或等待我們即將推出的 Gamma 自動生成功能。</p>
+                    <h4 className="text-xl font-bold text-brand-light mb-3">第三步：生成前導頁 (Landing Page)</h4>
+                    <p className="text-text-secondary mb-4 text-sm">請提供產品的商店網址以用於「行動呼籲 (CTA)」連結，然後選擇下方一個主題來生成完整的前導頁。</p>
+                     <div className="space-y-2">
+                        <label htmlFor="productUrl" className="font-medium text-text-secondary">產品商店網址</label>
+                        <input id="productUrl" type="url" value={productUrl} onChange={e => setProductUrl(e.target.value)} placeholder="https://example.com/your-product" required className="w-full bg-slate-900 border border-slate-600 rounded-md p-3 focus:ring-2 focus:ring-brand-secondary focus:outline-none transition" />
+                    </div>
                 </div>
 
                 <div>
+                    <h4 className="text-xl font-bold text-brand-light mb-4">選擇一個主題以生成內容</h4>
                     <div className="grid md:grid-cols-1 lg:grid-cols-3 gap-6">
                         {strategy.contentTopics.map((topic, i) => 
                             <ContentTopicCard 
                                 key={i} 
                                 topic={topic}
-                                onGenerate={() => onGenerateDocument(topic)}
-                                onGenerateGammaPrompt={() => onGenerateGammaPrompt(topic)}
-                                onGenerateAIStudioPrompt={() => onGenerateAIStudioPrompt(topic)}
+                                onGenerate={() => onGenerateWebpage(topic)}
+                                onView={() => onViewWebpage(topic.topic)}
+                                isEnabled={!!productUrl}
                                 isGenerating={generatingTopic === topic.topic}
-                                generatedDocument={generatedDocuments[topic.topic]}
+                                isGenerated={!!generatedWebpages[topic.topic]}
                             />
                         )}
                     </div>
@@ -479,16 +433,13 @@ const ContentStrategyDisplay: React.FC<ContentStrategyDisplayProps> = ({ strateg
 interface ContentTopicCardProps {
     topic: ContentTopic;
     onGenerate: () => void;
-    onGenerateGammaPrompt: () => void;
-    onGenerateAIStudioPrompt: () => void;
+    onView: () => void;
+    isEnabled: boolean;
     isGenerating: boolean;
-    generatedDocument: GammaGenerationResult | undefined;
+    isGenerated: boolean;
 }
 
-const ContentTopicCard: React.FC<ContentTopicCardProps> = ({ topic, onGenerate, onGenerateGammaPrompt, onGenerateAIStudioPrompt, isGenerating, generatedDocument }) => {
-    const isGenerated = generatedDocument && generatedDocument.status === 'completed';
-
-    return (
+const ContentTopicCard: React.FC<ContentTopicCardProps> = ({ topic, onGenerate, onView, isEnabled, isGenerating, isGenerated }) => (
     <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 space-y-3 flex flex-col justify-between">
         <div>
             <h5 className="text-lg font-bold text-brand-secondary">{topic.topic}</h5>
@@ -503,33 +454,39 @@ const ContentTopicCard: React.FC<ContentTopicCardProps> = ({ topic, onGenerate, 
                         {topic.seoGuidance.semanticKeywords.map((kw, i) => <Tag key={i}>{kw}</Tag>)}
                     </div>
                  </div>
+                 <p className="text-text-secondary"><strong className="text-slate-400">內部連結:</strong> {topic.seoGuidance.linkingStrategy.internal}</p>
+                 <p className="text-text-secondary"><strong className="text-slate-400">外部連結:</strong> {topic.seoGuidance.linkingStrategy.external}</p>
             </div>
         </div>
-        <div className="mt-4 space-y-2">
+        {isGenerated ? (
              <button 
-                disabled={true}
-                className="w-full bg-slate-600 text-white font-bold py-2 px-4 rounded-md disabled:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 flex items-center justify-center text-sm"
+                onClick={onView}
+                className="mt-4 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out flex items-center justify-center text-sm"
             >
-                <DocumentTextIcon className="w-4 h-4 mr-2" />
-                呼叫 Gamma API (即將推出)
+                <EyeIcon className="w-4 h-4 mr-2" />
+                檢視頁面
             </button>
-             <button 
-                onClick={onGenerateAIStudioPrompt} 
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out flex items-center justify-center text-sm"
-            >
-                <SparklesIcon className="w-4 h-4 mr-2" />
-                生成 AI Studio 提示詞
-            </button>
+        ) : (
             <button 
-                onClick={onGenerateGammaPrompt} 
-                className="w-full bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out flex items-center justify-center text-sm"
+                onClick={onGenerate} 
+                disabled={!isEnabled || isGenerating}
+                className="mt-4 w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center text-sm"
             >
-                <CodeBracketIcon className="w-4 h-4 mr-2" />
-                生成 Gamma 提示詞
+                {isGenerating ? (
+                    <>
+                        <div className="mr-2 border-t-transparent border-solid animate-spin rounded-full border-white border-2 h-4 w-4"></div>
+                        生成中...
+                    </>
+                ) : (
+                    <>
+                        <DocumentTextIcon className="w-4 h-4 mr-2" />
+                        生成前導頁
+                    </>
+                )}
             </button>
-        </div>
+        )}
     </div>
-)};
+);
 
 const InteractiveElementCard: React.FC<{ element: InteractiveElement }> = ({ element }) => (
      <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
@@ -538,391 +495,66 @@ const InteractiveElementCard: React.FC<{ element: InteractiveElement }> = ({ ele
     </div>
 );
 
-const PromptModal: React.FC<{ prompt: string; onClose: () => void; title: string; }> = ({ prompt, onClose, title }) => {
-    const [isCopied, setIsCopied] = useState(false);
-    const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+const WebpageContentDisplay: React.FC<{ content: WebpageContent }> = ({ content }) => {
+    const [copied, setCopied] = useState(false);
 
     const handleCopy = () => {
-        if (textareaRef.current) {
-            navigator.clipboard.writeText(textareaRef.current.value);
-            setIsCopied(true);
-            setTimeout(() => setIsCopied(false), 2000);
-        }
-    };
-    
-    // Close modal on escape key
-    useEffect(() => {
-        const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                onClose();
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => {
-            window.removeEventListener('keydown', handleKeyDown);
-        };
-    }, [onClose]);
-
-    return (
-        <div 
-            className="fixed inset-0 bg-black bg-opacity-70 flex justify-center items-center z-50 animate-fade-in p-4"
-            onClick={onClose}
-        >
-            <div 
-                className="bg-surface rounded-lg shadow-xl w-full max-w-3xl border border-slate-700 flex flex-col max-h-full"
-                onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside
-            >
-                <div className="p-5 border-b border-slate-700 flex justify-between items-center flex-shrink-0">
-                    <h2 className="text-xl font-bold text-text-primary">{title}</h2>
-                    <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
-                </div>
-                <div className="p-5 overflow-y-auto">
-                    <p className="text-text-secondary mb-4 text-sm">
-                        請複製以下提示詞，並將其貼到對應的 AI 工具中以生成高品質內容。
-                    </p>
-                    <textarea 
-                        ref={textareaRef}
-                        readOnly 
-                        value={prompt} 
-                        className="w-full h-96 bg-slate-800 border border-slate-600 rounded-md p-3 text-sm text-slate-300 resize-none focus:ring-2 focus:ring-brand-secondary focus:outline-none" 
-                    />
-                </div>
-                <div className="p-4 border-t border-slate-700 flex justify-end flex-shrink-0 bg-slate-800/50 rounded-b-lg">
-                    <button 
-                        onClick={handleCopy}
-                        className="bg-brand-secondary hover:bg-brand-dark text-white font-bold py-2 px-5 rounded-md transition duration-300 ease-in-out inline-flex items-center"
-                    >
-                        {isCopied ? '已複製！' : '複製提示詞'}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const InfoModal: React.FC<{ title: string; children: React.ReactNode; onClose: () => void; }> = ({ title, children, onClose }) => {
-    useEffect(() => {
-        const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                onClose();
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => {
-            window.removeEventListener('keydown', handleKeyDown);
-        };
-    }, [onClose]);
-
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex justify-center items-center z-50 animate-fade-in p-4" onClick={onClose}>
-            <div className="bg-surface rounded-lg shadow-xl w-full max-w-3xl border border-slate-700 flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
-                <div className="p-5 border-b border-slate-700 flex justify-between items-center flex-shrink-0">
-                    <h2 className="text-xl font-bold text-text-primary">{title}</h2>
-                    <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
-                </div>
-                <div className="p-6 overflow-y-auto text-text-secondary space-y-4">
-                    {children}
-                </div>
-                <div className="p-4 border-t border-slate-700 flex justify-end flex-shrink-0 bg-slate-800/50 rounded-b-lg">
-                    <button onClick={onClose} className="bg-brand-secondary hover:bg-brand-dark text-white font-bold py-2 px-5 rounded-md transition">
-                        關閉
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const FeatureIntroductionContent: React.FC = () => (
-    <>
-        <p className="mb-6">「FlyPig AI 電商增長神器」是一個從市場策略、內容規劃到技術實現的全流程加速器，旨在為您的電商事業節省大量時間與人力成本，實現更快速、更智慧的業務增長。</p>
-        <div className="space-y-6">
-            <div>
-                <h3 className="text-lg font-semibold text-brand-light mb-2">🚀 全方位市場深度透視</h3>
-                <ul className="list-disc list-inside space-y-1 pl-2">
-                    <li>**智慧產品分析：** 只需提供產品資訊，AI 就能自動拆解其核心賣點，更可上傳圖片進行視覺分析。</li>
-                    <li>**精準市場定位：** 深入剖析目標市場的文化、消費習慣和熱門趨勢。</li>
-                    <li>**競爭格局掃描：** 自動識別主要競爭對手，並透視其行銷策略與優劣勢。</li>
-                    <li>**清晰用戶畫像：** 為您描繪出最真實的潛在客戶樣貌 (Buyer Persona)，包含興趣、痛點與搜尋關鍵字。</li>
-                </ul>
-            </div>
-            <div>
-                <h3 className="text-lg font-semibold text-brand-light mb-2">✍️ 自動化內容與 SEO 策略規劃</h3>
-                <ul className="list-disc list-inside space-y-1 pl-2">
-                     <li>**高價值內容主題生成：** AI 自動規劃最能吸引目標客群的內容主題。</li>
-                     <li>**專業 SEO 佈局建議：** 為每個主題提供完整的 SEO 策略，協助網站獲得更高排名。</li>
-                     <li>**高轉換率文案點子：** 提供多組具說服力的行動呼籲 (CTA) 文案。</li>
-                </ul>
-            </div>
-            <div>
-                <h3 className="text-lg font-semibold text-brand-light mb-2">💻 一鍵生成行銷素材與程式碼</h3>
-                 <ul className="list-disc list-inside space-y-1 pl-2">
-                     <li>**AI Studio 前導頁程式碼生成：** 一鍵生成專業提示詞，讓 AI 程式碼助理（如 Google AI Studio）在幾秒內產出高品質的 React 前導頁程式碼。</li>
-                     <li>**專業簡報/文件提示詞生成：** 為 Gamma 等 AI 簡報工具生成專用提示詞，快速創建專業簡報。</li>
-                     <li>**[即將推出] Gamma API 自動化文件生成：** 未來將能直接串接 Gamma API，全自動生成圖文並茂的專業文件。</li>
-                 </ul>
-            </div>
-        </div>
-         <h3 className="text-lg font-semibold text-brand-light mt-8 mb-2">💡 如何使用</h3>
-         <ol className="list-decimal list-inside space-y-2 pl-2">
-             <li>**第一步：輸入產品資訊** - 填寫產品資料並點擊「生成市場分析報告」。</li>
-             <li>**第二步：生成內容策略** - 報告產出後，點擊「生成內容策略」按鈕，AI 將規劃出詳細的內容與 SEO 策略。</li>
-             <li>**第三步：生成提示詞** - 從三個建議的內容主題中，選擇一個並點擊「生成 AI Studio 提示詞」或「生成 Gamma 提示詞」，即可複製提示詞至對應工具使用。</li>
-         </ol>
-    </>
-);
-
-const AuthComponent: React.FC = () => {
-    const [isRegisterMode, setIsRegisterMode] = useState(false);
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [error, setError] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            setError('請輸入有效的電子郵件地址。');
-            return;
-        }
-        if (password.length < 6) {
-            setError('密碼長度至少需要6個字元。');
-            return;
-        }
-        
-        setIsLoading(true);
-        setError('');
-        try {
-            if (isRegisterMode) {
-                await signUpWithEmail(email, password);
-            } else {
-                await signInWithEmail(email, password);
-            }
-            // On success, the onAuthStateChanged listener in App.tsx will handle the rest.
-        } catch (err: any) {
-            if (err.code) { // It's likely a Firebase Auth error
-                setError(mapFirebaseAuthError(err.code));
-            } else { // It's likely a Firestore error or another issue
-                console.error("Registration failed:", err);
-                setError("無法建立使用者資料庫，請檢查後台設定。");
-            }
-        } finally {
-            setIsLoading(false);
-        }
+        navigator.clipboard.writeText(content.htmlContent);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
     };
 
     return (
-        <div className="w-full max-w-md mx-auto mt-20 text-center animate-fade-in">
-            <div className="bg-surface p-8 rounded-lg shadow-lg border border-slate-700">
-                <SparklesIcon className="w-16 h-16 mx-auto text-brand-secondary mb-4" />
-                <h2 className="text-2xl font-bold text-text-primary mb-2">{isRegisterMode ? '註冊新帳號' : '會員登入'}</h2>
-                <p className="text-text-secondary mb-6">每個帳號僅限免費生成一次市場分析報告。</p>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <div>
-                        <input
-                            type="email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            placeholder="請輸入您的電子郵件"
-                            required
-                            className="w-full bg-slate-800 border border-slate-600 rounded-md p-3 focus:ring-2 focus:ring-brand-secondary focus:outline-none transition"
-                        />
+        <div className="w-full max-w-6xl mx-auto py-8 space-y-8">
+            <ResultCard title="生成的前導頁 & SEO 分析" icon={<GlobeAltIcon className="w-8 h-8" />}>
+                <div className="grid lg:grid-cols-3 gap-6">
+                    <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                        <h4 className="text-lg font-semibold text-brand-light">頁面標題</h4>
+                        <p className="text-text-primary mt-1">{content.title}</p>
                     </div>
-                    <div>
-                        <input
-                            type="password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            placeholder="請輸入密碼 (至少6位數)"
-                            required
-                            className="w-full bg-slate-800 border border-slate-600 rounded-md p-3 focus:ring-2 focus:ring-brand-secondary focus:outline-none transition"
-                        />
+                     <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                        <h4 className="text-lg font-semibold text-brand-light">建議的網址</h4>
+                        <p className="text-text-primary mt-1 font-mono bg-slate-900 p-2 rounded-md inline-block">yourwebsite.com<span className="text-brand-secondary">{content.suggestedUrl}</span></p>
                     </div>
-                    {error && <p className="text-red-400 text-sm h-5">{error}</p>}
-                    <button
-                        type="submit"
-                        disabled={isLoading}
-                        className="w-full bg-brand-secondary hover:bg-brand-dark text-white font-bold py-3 px-4 rounded-md transition duration-300 ease-in-out transform hover:scale-105 flex items-center justify-center disabled:bg-slate-600 disabled:cursor-not-allowed"
-                    >
-                        {isLoading ? (
-                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                        ) : (
-                            isRegisterMode ? '註冊' : '登入'
-                        )}
-                    </button>
-                </form>
-                <button 
-                    onClick={() => setIsRegisterMode(!isRegisterMode)}
-                    className="mt-4 text-sm text-brand-secondary hover:underline"
-                >
-                    {isRegisterMode ? '已經有帳號了？點此登入' : '還沒有帳號？點此註冊'}
-                </button>
-            </div>
-        </div>
-    );
-};
-
-
-const LimitReachedDisplay: React.FC<{ onLogout: () => void; onCreatePayment: () => void; isCreatingPayment: boolean; }> = ({ onLogout, onCreatePayment, isCreatingPayment }) => (
-    <div className="w-full max-w-2xl mx-auto text-center py-20 animate-fade-in">
-         <div className="bg-surface p-8 rounded-lg shadow-lg border border-slate-700">
-            <SparklesIcon className="w-16 h-16 mx-auto text-brand-secondary mb-4"/>
-            <h2 className="text-2xl font-bold text-text-primary mb-2">升級解鎖無限次分析！</h2>
-            <p className="text-text-secondary mb-6">您的免費分析額度已用完。立即升級至專業版，即可無限次使用所有強大功能，加速您的電商業務增長。</p>
-            <button
-                onClick={onCreatePayment}
-                disabled={isCreatingPayment}
-                className="bg-brand-secondary hover:bg-brand-dark text-white font-bold py-3 px-8 rounded-md transition duration-300 ease-in-out transform hover:scale-105 inline-flex items-center text-lg disabled:bg-slate-600 disabled:cursor-not-allowed"
-            >
-                {isCreatingPayment ? '訂單建立中...' : '立即升級專業版 (NT$300)'}
-                {isCreatingPayment && <div className="ml-3 border-t-transparent border-solid animate-spin rounded-full border-white border-2 h-5 w-5"></div>}
-            </button>
-            <button
-                onClick={onLogout}
-                className="mt-4 text-sm text-slate-400 hover:text-white transition duration-300"
-            >
-                或登出使用其他帳號
-            </button>
-        </div>
-    </div>
-);
-
-type EcpyOrderParams = {
-    [key: string]: string;
-};
-
-const EcpyPaymentForm: React.FC<{ params: EcpyOrderParams; actionUrl: string }> = ({ params, actionUrl }) => {
-    const formRef = useRef<HTMLFormElement>(null);
-
-    useEffect(() => {
-        if (formRef.current) {
-            formRef.current.submit();
-        }
-    }, []);
-
-    return (
-        <div style={{ display: 'none' }}>
-            <form ref={formRef} action={actionUrl} method="POST">
-                {Object.entries(params).map(([key, value]) => (
-                    <input key={key} type="hidden" name={key} value={value} />
-                ))}
-            </form>
-        </div>
-    );
-};
-
-const AdminDashboard: React.FC = () => {
-    const [users, setUsers] = useState<AdminUserView[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [isDownloading, setIsDownloading] = useState(false);
-
-    useEffect(() => {
-        const fetchUsers = async () => {
-            try {
-                setIsLoading(true);
-                setError(null);
-                const fetchedUsers = await getUsers();
-                setUsers(fetchedUsers);
-            } catch (err) {
-                setError(err instanceof Error ? err.message : '無法獲取使用者資料');
-            } finally {
-                setIsLoading(false);
-            }
-        };
-        fetchUsers();
-    }, []);
-
-    const handleDownload = async () => {
-        setIsDownloading(true);
-        try {
-            const { csvData } = await downloadUsersCsv();
-            const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
-            const url = URL.createObjectURL(blob);
-            link.setAttribute('href', url);
-            link.setAttribute('download', `flypig_ai_users_${new Date().toISOString().split('T')[0]}.csv`);
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        } catch (err) {
-             alert(`下載失敗: ${err instanceof Error ? err.message : '未知錯誤'}`);
-        } finally {
-            setIsDownloading(false);
-        }
-    };
-
-    return (
-        <div className="w-full max-w-6xl mx-auto py-8 animate-fade-in">
-            <ResultCard 
-                title="管理員後台" 
-                icon={<ShieldCheckIcon className="w-8 h-8"/>}
-                titleAction={
-                     <button 
-                        onClick={handleDownload}
-                        disabled={isDownloading}
-                        className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out text-sm inline-flex items-center disabled:bg-slate-600 disabled:cursor-not-allowed"
-                    >
-                        <ArrowDownTrayIcon className="w-5 h-5 mr-2" />
-                        {isDownloading ? '下載中...' : '下載會員資料 (CSV)'}
-                    </button>
-                }
-            >
-                <p className="text-text-secondary mb-6">此處顯示所有已註冊的會員資料。</p>
-                {isLoading && <Loader title="正在載入會員資料..." message="請稍候..." />}
-                {error && <ErrorDisplay title="載入失敗" message={error} />}
-                {!isLoading && !error && (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left text-text-secondary">
-                            <thead className="text-xs text-text-primary uppercase bg-slate-700">
-                                <tr>
-                                    <th scope="col" className="px-6 py-3">Email</th>
-                                    <th scope="col" className="px-6 py-3">註冊時間</th>
-                                    <th scope="col" className="px-6 py-3 text-center">分析次數</th>
-                                    <th scope="col" className="px-6 py-3 text-center">付費狀態</th>
-                                    <th scope="col" className="px-6 py-3">UID</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {users.map(user => (
-                                    <tr key={user.uid} className="bg-surface border-b border-slate-700 hover:bg-slate-800">
-                                        <th scope="row" className="px-6 py-4 font-medium text-text-primary whitespace-nowrap">{user.email}</th>
-                                        <td className="px-6 py-4">{new Date(user.createdAt).toLocaleString()}</td>
-                                        <td className="px-6 py-4 text-center">{user.analysisCount}</td>
-                                        <td className="px-6 py-4 text-center">
-                                            {user.isPaid ? (
-                                                <span className="px-2 py-1 text-xs font-medium text-green-300 bg-green-900 rounded-full">已付費</span>
-                                            ) : (
-                                                <span className="px-2 py-1 text-xs font-medium text-yellow-300 bg-yellow-900 rounded-full">未付費</span>
-                                            )}
-                                        </td>
-                                        <td className="px-6 py-4 font-mono text-xs">{user.uid}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                    <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 lg:col-span-3">
+                        <h4 className="text-lg font-semibold text-brand-light">Meta 描述</h4>
+                        <p className="text-text-secondary mt-1">{content.metaDescription}</p>
                     </div>
-                )}
+                </div>
             </ResultCard>
-        </div>
-    );
-};
 
+             <ResultCard title="SEO 實踐分析" icon={<CheckIcon className="w-8 h-8" />}>
+                 <p className="text-text-secondary mb-4">{content.seoAnalysis.summary}</p>
+                 <ul className="space-y-2">
+                     {content.seoAnalysis.checklist.map((item, i) => (
+                         <li key={i} className={`flex items-center p-2 rounded-md ${item.passed ? 'bg-green-900/50' : 'bg-red-900/50'}`}>
+                             {item.passed ? <CheckIcon className="w-5 h-5 mr-3 text-green-400" /> : <XCircleIcon className="w-5 h-5 mr-3 text-red-400" />}
+                             <span className={item.passed ? 'text-green-300' : 'text-red-300'}>{item.item}</span>
+                         </li>
+                     ))}
+                 </ul>
+            </ResultCard>
+
+            <div>
+                <div className="flex justify-between items-center mb-4">
+                     <h4 className="text-2xl font-bold text-text-primary">內容預覽 & HTML</h4>
+                     <button onClick={handleCopy} className="bg-brand-secondary hover:bg-brand-dark text-white font-bold py-2 px-4 rounded-md transition duration-300 ease-in-out text-sm inline-flex items-center">
+                         {copied ? <><CheckIcon className="w-5 h-5 mr-2" /> 已複製!</> : <><ClipboardIcon className="w-5 h-5 mr-2" /> 複製 HTML</>}
+                     </button>
+                </div>
+                <div className="bg-white text-slate-800 p-2 rounded-lg shadow-2xl">
+                    <div dangerouslySetInnerHTML={{ __html: content.htmlContent }} />
+                </div>
+            </div>
+
+        </div>
+    )
+}
 
 // --- Main App Component ---
 
-type User = {
-    uid: string;
-    email: string | null;
-    analysisCount: number;
-    isPaid?: boolean;
-    isAdmin?: boolean;
-};
-
 function App() {
-    const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
@@ -934,91 +566,27 @@ function App() {
     const [contentStrategy, setContentStrategy] = useState<ContentStrategy | null>(null);
     
     const [generatingTopic, setGeneratingTopic] = useState<string | null>(null);
-    const [gammaError, setGammaError] = useState<string | null>(null);
-    const [generatedDocuments, setGeneratedDocuments] = useState<Record<string, GammaGenerationResult>>({});
-    const [gammaStatusMessage, setGammaStatusMessage] = useState<string | null>(null);
-    
-    const [promptModalContent, setPromptModalContent] = useState<string | null>(null);
-    const [promptModalTitle, setPromptModalTitle] = useState('');
-    
-    const [isIntroModalOpen, setIsIntroModalOpen] = useState(false);
-    
-    const [isCreatingPayment, setIsCreatingPayment] = useState(false);
-    const [ecpyOrder, setEcpyOrder] = useState<{ params: EcpyOrderParams; actionUrl: string } | null>(null);
-    
-    const [isAdminView, setIsAdminView] = useState(false);
-
-    const pollingRefs = useRef<Record<string, boolean>>({});
-
-    const handleStartOver = useCallback(() => {
-        setIsLoading(false);
-        setError(null);
-        setAnalysisResult(null);
-        setProductInfo(null);
-        setIsGeneratingStrategy(false);
-        setStrategyError(null);
-        setContentStrategy(null);
-        setGeneratingTopic(null);
-        setGammaError(null);
-        setGeneratedDocuments({});
-        setGammaStatusMessage(null);
-        setPromptModalContent(null);
-        pollingRefs.current = {};
-        setFormKey(prevKey => prevKey + 1);
-        setIsAdminView(false);
-    }, []);
-
-    useEffect(() => {
-        const unsubscribe = onAuthStateChangedListener(async (userAuth) => {
-            if (userAuth) {
-                const userData = await getUserData(userAuth.uid);
-                const idTokenResult = await userAuth.getIdTokenResult();
-                
-                if (userData) {
-                    setCurrentUser({
-                        uid: userAuth.uid,
-                        email: userAuth.email,
-                        analysisCount: (userData.analysisCount as number) || 0,
-                        isPaid: (userData.isPaid as boolean) || false,
-                        isAdmin: idTokenResult.claims.admin === true,
-                    });
-                } else {
-                    console.error("User exists in Auth but not in Firestore. This might happen if Firestore doc creation failed during signup.");
-                    signOutUser(); // Log them out to prevent being in a broken state
-                }
-            } else {
-                setCurrentUser(null);
-                handleStartOver();
-            }
-        });
-        return unsubscribe; // Cleanup subscription on unmount
-    }, [handleStartOver]);
+    const [webpageError, setWebpageError] = useState<string | null>(null);
+    const [generatedWebpages, setGeneratedWebpages] = useState<Record<string, WebpageContent>>({});
+    const [activeWebpageTopic, setActiveWebpageTopic] = useState<string | null>(null);
+    const [productUrl, setProductUrl] = useState('');
 
     const handleAnalyze = useCallback(async (productInfo: ProductInfo) => {
-        if (!currentUser || (currentUser.analysisCount >= 1 && !currentUser.isPaid)) return;
-
+        // Don't reset everything here, wait for the user to click "start over"
         setProductInfo(productInfo);
         setIsLoading(true);
         setError(null);
-        setAnalysisResult(null);
+        setAnalysisResult(null); // Clear previous results
         try {
             const result = await analyzeMarket(productInfo);
             setAnalysisResult(result);
-
-            // Log analysis and increment user's analysis count in Firestore
-            await incrementUserAnalysisCount(currentUser.uid);
-            await logAnalysis(currentUser.uid, currentUser.email, productInfo, result);
-
-            // Update local user state to reflect the change immediately
-            setCurrentUser(prevUser => prevUser ? { ...prevUser, analysisCount: prevUser.analysisCount + 1 } : null);
-
         } catch (err) {
             setError(err instanceof Error ? err.message : '發生未知錯誤');
             console.error(err);
         } finally {
             setIsLoading(false);
         }
-    }, [currentUser]);
+    }, []);
     
     const handleGenerateStrategy = useCallback(async () => {
         if (!analysisResult) return;
@@ -1036,229 +604,44 @@ function App() {
         }
     }, [analysisResult]);
 
-    const handleCreatePayment = useCallback(async () => {
-        if (!currentUser) return;
-        setIsCreatingPayment(true);
-        setError(null);
+     const handleGenerateWebpage = useCallback(async (topic: ContentTopic) => {
+        if (!contentStrategy) return;
+        setGeneratingTopic(topic.topic);
+        setWebpageError(null);
+        setActiveWebpageTopic(null); // Hide previous page while generating
         try {
-            const orderDetails = await createEcpayOrder();
-            const { actionUrl, ...params } = orderDetails;
-            setEcpyOrder({ params, actionUrl });
+            const result = await generateWebpageContent(topic, contentStrategy.interactiveElements, productUrl);
+            setGeneratedWebpages(prev => ({...prev, [topic.topic]: result}));
+            setActiveWebpageTopic(topic.topic);
         } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : '建立付款時發生錯誤';
-            setError(errorMessage);
-            setEcpyOrder(null);
+            setWebpageError(err instanceof Error ? err.message : '發生未知錯誤');
+            console.error(err);
         } finally {
-            setIsCreatingPayment(false);
-        }
-    }, [currentUser]);
-
-
-    const handleGenerateGammaPrompt = useCallback((topic: ContentTopic) => {
-        if (!productInfo || !analysisResult || !contentStrategy) return;
-
-        const personaDetails = analysisResult.buyerPersonas.map(p => 
-            `- **${p.personaName} (${p.demographics}):**\n   - **興趣:** ${p.interests.join(', ')}\n   - **痛點:** ${p.painPoints.join(', ')}\n   - **搜尋關鍵字:** ${p.keywords.join(', ')}`
-        ).join('\n\n');
-
-        const prompt = `**任務目標：** 根據以下詳細的市場分析，為產品「${productInfo.name}」創建一篇具吸引力、SEO 優化的專業前導頁文章。
-
----
-
-**1. 文章主標題 (請直接使用)：**
-"${topic.topic}"
-
----
-
-**2. 核心推廣產品資訊：**
-*   **產品名稱：** ${productInfo.name}
-*   **產品描述：** ${productInfo.description}
-*   **產品參考連結 (用於連結與內容參考)：** ${productInfo.url || '無'}
-
----
-
-**3. 目標受眾深度剖析 (請以此為基礎進行撰寫)：**
-您正在為以下這些人物撰寫，請直接解決他們的需求與痛點：
-${personaDetails}
-
----
-
-**4. 關鍵訊息與價值主張 (文章必須強調)：**
-*   **主要特色：** ${analysisResult.productCoreValue.mainFeatures.join('; ')}
-*   **核心優勢 (獨特賣點)：** ${analysisResult.productCoreValue.coreAdvantages.join('; ')}
-*   **解決的痛點：** ${analysisResult.productCoreValue.painPointsSolved.join('; ')}
-
----
-
-**5. 內容與 SEO 要求：**
-*   **主要關鍵字 (Focus Keyword)：** \`${topic.focusKeyword}\` (請確保在標題、副標題和內文中自然地出現)
-*   **長尾關鍵字 (Long-tail Keywords)：** 請在文章中自然地融入以下詞組：${topic.longTailKeywords.join(', ')}
-*   **語意關鍵字 (Semantic Keywords)：** 為了建立主題權威，請使用相關概念詞：${topic.seoGuidance.semanticKeywords.join(', ')}
-*   **建議文章結構：**
-    1.  **開頭：** 使用一個引人入勝的引言，提及目標受眾的一個共同痛點，引起共鳴。
-    2.  **發展：** 詳細闡述該問題，讓讀者感覺「你懂我」。
-    3.  **解決方案：** 順勢引出「${productInfo.name}」作為理想的解決方案。自然地介紹其特色與優勢如何解決前述痛點。
-    4.  **差異化：** (如果適用) 可以簡短提及與市場上其他方案（例如 ${analysisResult.competitorAnalysis.length > 0 ? analysisResult.competitorAnalysis[0].brandName : '傳統方法'}）的不同之處，突顯我們的獨特性。
-    5.  **結尾：** 用一個強而有力的總結收尾，並搭配明確的行動呼籲 (CTA)。
-*   **寫作語氣：** 針對 **${productInfo.market}** 市場，語氣應專業、具說服力，並對用戶的問題表示同理心。參考語言特性：${analysisResult.marketPositioning.languageNuances}。
-
----
-
-**6. 行動呼籲 (Call to Action - CTA)：**
-請在文章結尾處，自然地整合以下至少一個 CTA 文案：
-${contentStrategy.ctaSuggestions.map(cta => `- "${cta}"`).join('\n')}
-
----
-
-**7. 視覺要求：**
-請選擇與產品、目標市場和受眾形象相關的高品質、專業庫存圖片。例如，展示符合人物誌形象的人們從產品中受益的場景。
-`.trim();
-        setPromptModalTitle('Gamma 生成提示詞');
-        setPromptModalContent(prompt);
-
-    }, [productInfo, analysisResult, contentStrategy]);
-
-    const handleGenerateAIStudioPrompt = useCallback((topic: ContentTopic) => {
-        if (!productInfo || !analysisResult || !contentStrategy) return;
-
-        const prompt = `
-You are an expert frontend developer specializing in creating high-conversion landing pages with React and Tailwind CSS.
-Your task is to generate the complete React application code to be placed inside the \`<script type="module">\` tag of the provided HTML boilerplate.
-
-**Boilerplate (DO NOT repeat this structure in your output, only provide the JavaScript code for the script tag):**
-\`\`\`html
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>${productInfo.name} - Landing Page</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script type="importmap">
-    {
-      "imports": {
-        "react": "https://esm.sh/react@18.2.0",
-        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client"
-      }
-    }
-    </script>
-</head>
-<body class="bg-slate-900 text-slate-50">
-    <div id="root"></div>
-    <script type="module">
-        // YOUR REACT CODE GOES HERE
-    </script>
-</body>
-</html>
-\`\`\`
-
-**Instructions for the React Code:**
-1.  **Imports:** Start your code by importing React and ReactDOM. This is mandatory.
-    \`\`\`javascript
-    import React, { useState, useEffect, useCallback } from 'react';
-    import ReactDOM from 'react-dom/client';
-    \`\`\`
-2.  **Single Component Structure:** Create a main \`App\` component that contains the entire landing page structure.
-3.  **Render the App:** Use \`ReactDOM.createRoot(document.getElementById('root')).render(<App />);\` to render your main component.
-4.  **Design & UX:**
-    *   The design must be modern, clean, professional, and fully responsive using Tailwind CSS.
-    *   Use a color palette based on: Primary: #3b82f6 (blue-500), Surface: #1e293b (slate-800), Text: #f8fafc (slate-50). The body background is already set to a dark slate.
-    *   Incorporate subtle animations (e.g., fade-in on scroll) for a premium feel.
-    *   Use high-quality placeholder images from \`https://picsum.photos/seed/{seed}/width/height\` for visuals.
-5.  **Content & SEO:**
-    *   The main headline of the page must be: "${topic.topic}".
-    *   The content should be persuasive and directly address the target audience's needs.
-    *   Integrate the following SEO keywords naturally:
-        *   **Focus Keyword:** ${topic.focusKeyword}
-        *   **Long-tail Keywords:** ${topic.longTailKeywords.join(', ')}
-        *   **Semantic Keywords:** ${topic.seoGuidance.semanticKeywords.join(', ')}
-6.  **Page Structure:** The landing page should include the following sections in order:
-    *   **Header:** With the product name and a primary CTA button.
-    *   **Hero Section:** A compelling headline ("${topic.topic}"), a brief, engaging subheading, and a visually appealing image.
-    *   **Pain Points Section:** A section titled "是否這就是您遇到的困擾？" or similar, listing the key pain points solved by the product: "${analysisResult.productCoreValue.painPointsSolved.join('", "')}". Speak directly to the user's problems.
-    *   **Solution/Features Section:** Introduce "${productInfo.name}" as the solution. Detail its main features: "${analysisResult.productCoreValue.mainFeatures.join('", "')}". Highlight the core advantages: "${analysisResult.productCoreValue.coreAdvantages.join('", "')}".
-    *   **Testimonials Section:** Create a section with 2-3 brief, fictional testimonials. Each testimonial should represent one of the buyer personas:
-        ${analysisResult.buyerPersonas.map(p => `- ${p.personaName} (${p.demographics})`).join('\n        ')}
-    *   **Final Call-to-Action (CTA) Section:** A strong, clear CTA section. Use one of these suggested CTA texts: "${contentStrategy.ctaSuggestions.join('" or "')}".
-
-**START OF CONTEXT DATA:**
----
-*   **Product Name:** ${productInfo.name}
-*   **Product Description:** ${productInfo.description}
-*   **Target Market:** ${productInfo.market}
-*   **Headline/Topic:** ${topic.topic}
-*   **Description for Topic:** ${topic.description}
----
-**END OF CONTEXT DATA.**
-
-Now, generate ONLY the complete JavaScript code for the React application to be placed inside the \`<script type="module">\` tag.
-        `.trim();
-
-        setPromptModalTitle('AI Studio 生成提示詞');
-        setPromptModalContent(prompt);
-    }, [productInfo, analysisResult, contentStrategy]);
-
-
-    const handleGenerateDocument = useCallback(async (topic: ContentTopic) => {
-        // This function is currently disabled from the UI.
-        if (!productInfo || !analysisResult) return;
-        
-        const topicTitle = topic.topic;
-        setGeneratingTopic(topicTitle);
-        setGammaError(null);
-        setGammaStatusMessage('正在向 Gamma 提交請求...');
-
-        try {
-            const { id } = await startGammaGeneration(productInfo, analysisResult, topic);
-            pollingRefs.current[topicTitle] = true;
-            
-            const poll = async (retries = 24) => { // Poll for 2 minutes max (24 * 5s)
-                if (!pollingRefs.current[topicTitle]) return; // Stop if cancelled
-                if (retries <= 0) {
-                    setGammaError('Gamma 文件生成超時。');
-                    setGeneratingTopic(null);
-                    setGammaStatusMessage(null);
-                    delete pollingRefs.current[topicTitle];
-                    return;
-                }
-
-                try {
-                    const result = await checkGammaGenerationStatus(id);
-                    setGammaStatusMessage(`生成狀態：${result.status}...`);
-
-                    if (result.status === 'completed') {
-                        setGeneratedDocuments(prev => ({...prev, [topicTitle]: result}));
-                        setGeneratingTopic(null);
-                        setGammaStatusMessage(null);
-                        delete pollingRefs.current[topicTitle];
-                    } else if (result.status === 'failed') {
-                        setGammaError('Gamma 文件生成失敗。');
-                        setGeneratingTopic(null);
-                        setGammaStatusMessage(null);
-                        delete pollingRefs.current[topicTitle];
-                    } else {
-                        setTimeout(() => poll(retries - 1), 5000); // Poll every 5 seconds
-                    }
-                } catch(err) {
-                     setGammaError(err instanceof Error ? err.message : '輪詢 Gamma 狀態時發生錯誤。');
-                     setGeneratingTopic(null);
-                     setGammaStatusMessage(null);
-                     delete pollingRefs.current[topicTitle];
-                }
-            };
-
-            poll();
-
-        } catch (err) {
-            setGammaError(err instanceof Error ? err.message : '啟動 Gamma 文件生成時發生錯誤。');
             setGeneratingTopic(null);
-            setGammaStatusMessage(null);
         }
-    }, [productInfo, analysisResult]);
+    }, [contentStrategy, productUrl]);
 
-    const renderMainContent = () => {
+    const handleStartOver = () => {
+        setIsLoading(false);
+        setError(null);
+        setAnalysisResult(null);
+        setProductInfo(null);
+        setIsGeneratingStrategy(false);
+        setStrategyError(null);
+        setContentStrategy(null);
+        setGeneratingTopic(null);
+        setWebpageError(null);
+        setGeneratedWebpages({});
+        setActiveWebpageTopic(null);
+        setProductUrl('');
+        setFormKey(prevKey => prevKey + 1);
+    };
+    
+    const renderContent = () => {
         if (isLoading) return <Loader title="正在進行深度分析..." message="AI 正在分析市場、競爭對手與潛在客戶。" />;
         if (error) return <ErrorDisplay title="分析失敗" message={error} />;
+        
+        const activeWebpage = activeWebpageTopic ? generatedWebpages[activeWebpageTopic] : null;
 
         return (
             <>
@@ -1280,92 +663,44 @@ Now, generate ONLY the complete JavaScript code for the React application to be 
                     <ContentStrategyDisplay 
                         strategy={contentStrategy} 
                         productInfo={productInfo}
-                        analysisResult={analysisResult}
-                        onGenerateDocument={handleGenerateDocument} 
-                        onGenerateGammaPrompt={handleGenerateGammaPrompt}
-                        onGenerateAIStudioPrompt={handleGenerateAIStudioPrompt}
+                        onGenerateWebpage={handleGenerateWebpage} 
+                        productUrl={productUrl} 
+                        setProductUrl={setProductUrl} 
                         generatingTopic={generatingTopic}
-                        generatedDocuments={generatedDocuments}
+                        generatedWebpages={generatedWebpages}
+                        onViewWebpage={setActiveWebpageTopic}
                     />
                 )}
                 
-                {generatingTopic && <Loader title="正在生成 Gamma 前導頁..." message={gammaStatusMessage || "請稍候..."} icon={<DocumentTextIcon className="w-16 h-16 mx-auto"/>} />}
-                {gammaError && <ErrorDisplay title="前導頁生成失敗" message={gammaError} />}
+                {generatingTopic && <Loader title="正在撰寫前導頁..." message="AI 正在產出圖文並茂的 SEO 優化頁面。" icon={<DocumentTextIcon className="w-16 h-16 mx-auto"/>} />}
+                {webpageError && <ErrorDisplay title="網頁生成失敗" message={webpageError} />}
+
+                {activeWebpage && <WebpageContentDisplay content={activeWebpage} />}
             </>
         )
     };
-    
-    const renderAppBody = () => {
-        if (!currentUser) {
-            return <div className="text-center py-20">載入中...</div>;
-        }
-
-        if (isAdminView) {
-            return <AdminDashboard />;
-        }
-
-        if (currentUser.analysisCount >= 1 && !currentUser.isPaid) {
-            return <LimitReachedDisplay 
-                onLogout={signOutUser} 
-                onCreatePayment={handleCreatePayment} 
-                isCreatingPayment={isCreatingPayment}
-            />;
-        }
-        
-        if (!analysisResult && !isLoading && !error) {
-            return <InputForm key={formKey} onAnalyze={handleAnalyze} isLoading={isLoading} />;
-        }
-
-        return (
-            <>
-                {renderMainContent()}
-                
-                {(analysisResult || error) && !isLoading && !isGeneratingStrategy && (
-                     <div className="w-full max-w-6xl mx-auto text-center mt-12">
-                         <button onClick={currentUser.isPaid ? handleStartOver : signOutUser} className="text-sm text-slate-400 hover:text-white transition duration-300 inline-flex items-center">
-                             <ArrowPathIcon className="w-4 h-4 mr-2" />
-                             {currentUser.isPaid ? '開始新分析' : '登出並使用新帳號'}
-                         </button>
-                     </div>
-                )}
-            </>
-        );
-    };
-
 
     return (
         <div className="min-h-screen bg-background font-sans">
-            <main className="container mx-auto px-4 pb-12 relative">
-                <button 
-                    onClick={() => setIsIntroModalOpen(true)}
-                    className="absolute top-6 right-4 sm:right-6 md:right-8 bg-slate-800 hover:bg-slate-700 text-text-secondary font-semibold py-2 px-4 rounded-lg transition duration-300 ease-in-out text-sm z-10 border border-slate-600"
-                >
-                    功能簡介
-                </button>
-                <Header 
-                    userEmail={currentUser?.email} 
-                    onLogout={signOutUser} 
-                    isAdmin={currentUser?.isAdmin}
-                    isAdminView={isAdminView}
-                    setIsAdminView={setIsAdminView}
-                />
+            <main className="container mx-auto px-4 pb-12">
+                <Header />
                 <div className="mt-8">
-                    {!currentUser ? (
-                         <AuthComponent />
-                    ) : (
-                        renderAppBody()
+                    {!analysisResult && !isLoading && !error && (
+                        <InputForm key={formKey} onAnalyze={handleAnalyze} isLoading={isLoading} />
+                    )}
+
+                    {renderContent()}
+                    
+                    {(analysisResult || error) && !isLoading && !isGeneratingStrategy && (
+                         <div className="w-full max-w-6xl mx-auto text-center mt-12">
+                             <button onClick={handleStartOver} className="text-sm text-slate-400 hover:text-white transition duration-300 inline-flex items-center">
+                                 <ArrowPathIcon className="w-4 h-4 mr-2" />
+                                 開始新分析
+                             </button>
+                         </div>
                     )}
                 </div>
             </main>
-            {promptModalContent && (
-                <PromptModal prompt={promptModalContent} title={promptModalTitle} onClose={() => setPromptModalContent(null)} />
-            )}
-            {isIntroModalOpen && (
-                 <InfoModal title="🚀 FlyPig AI 電商增長神器：功能簡介" onClose={() => setIsIntroModalOpen(false)}>
-                    <FeatureIntroductionContent />
-                 </InfoModal>
-            )}
-            {ecpyOrder && <EcpyPaymentForm params={ecpyOrder.params} actionUrl={ecpyOrder.actionUrl} />}
         </div>
     );
 }

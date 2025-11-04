@@ -1,5 +1,5 @@
 {
-  "name": "flypig-ai-電商增長神器-v1.9",
+  "name": "flypig-ai-產品電商市場分析-pro",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -11,13 +11,7 @@
   "dependencies": {
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "@google/genai": "^1.19.0",
-    "firebase": "^12.3.0",
-    "cors": "^2.8.5",
-    "firebase-admin": "^13.5.0",
-    "firebase-functions": "^6.4.0",
-    "node-fetch": "^3.3.2",
-    "crypto": "^1.0.1"
+    "@google/genai": "^1.19.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
